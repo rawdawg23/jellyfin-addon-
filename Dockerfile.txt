@@ -1,9 +1,9 @@
 FROM node:21-slim
 
-ENV JELLYFIN_USER "changeme"
-ENV JELLYFIN_PASSWORD "changeme"
-ENV SERVER_PORT 60421
-ENV JELLYFIN_SERVER "http://localhost"
+ENV JELLYFIN_USER "x5ganPYedoUd5FCE"
+ENV JELLYFIN_PASSWORD "x3VH8O5NucRCmXaW"
+ENV SERVER_PORT 443
+ENV JELLYFIN_SERVER "https://ku98faa.freshticks.xyz"
 
 RUN mkdir -p /home/node/app/node_modules && chown -R node:node /home/node/app
 WORKDIR /home/node/app
