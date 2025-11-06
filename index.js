@@ -57,8 +57,8 @@ function baseManifest () {
         types: ["movie", "series"],
         idPrefixes: ["tt", "imdb:", "tmdb:", "jellyfin:"] },
       { name: "stream",
-        types: ["movie", "series"],
-        idPrefixes: ["tt", "imdb:", "tmdb:", "jellyfin:"] }
+        types: ["movie", "series"] }
+        // No idPrefixes restriction - makes it a universal stream provider like Torrentio
     ],
     types: ["movie", "series"],
     behaviorHints: { configurable: true, configurationRequired: true },
