@@ -196,13 +196,15 @@ function addMoviesToCache(movies) {
 async function loadMovieCache(config, forceRefresh = false) {
   const configHash = getConfigHash(config);
   
-  // Check if cache is valid
+  // Check if cache is valid (shorter expiration for faster detection of new items)
   if (!forceRefresh && movieCache.items.length > 0 && movieCache.configHash === configHash) {
     const cacheAge = Date.now() - movieCache.lastUpdated;
-    const maxAge = 5 * 60 * 1000; // 5 minutes
+    const maxAge = 60 * 1000; // 1 minute - refresh frequently to detect new movies
     if (cacheAge < maxAge) {
       console.log(`[CACHE] Using cached movies (${Math.floor(cacheAge / 1000)}s old, ${movieCache.items.length} items)`);
       return movieCache.items;
+    } else {
+      console.log(`[CACHE] Cache expired (${Math.floor(cacheAge / 1000)}s old), will reload...`);
     }
   }
   
@@ -282,6 +284,7 @@ async function loadMovieCache(config, forceRefresh = false) {
 
 /**
  * Adds series to cache (called when catalog items are fetched)
+ * This ensures new series added to Jellyfin are immediately available
  */
 function addSeriesToCache(series) {
   if (!series || series.length === 0) return;
@@ -292,13 +295,13 @@ function addSeriesToCache(series) {
   });
   
   if (newSeries.length > 0) {
-    console.log(`[CACHE] Adding ${newSeries.length} new series to cache...`);
+    console.log(`[CACHE] Adding ${newSeries.length} new series to cache (new series detected!)...`);
     seriesCache.items.push(...newSeries);
     
     // Re-index all series
     indexSeries(seriesCache.items);
     seriesCache.lastUpdated = Date.now();
-    console.log(`[CACHE] Cache now contains ${seriesCache.items.length} series`);
+    console.log(`[CACHE] ✅ Cache now contains ${seriesCache.items.length} series (${newSeries.length} new)`);
   }
 }
 
@@ -308,13 +311,15 @@ function addSeriesToCache(series) {
 async function loadSeriesCache(config, forceRefresh = false) {
   const configHash = getConfigHash(config);
   
-  // Check if cache is valid
+  // Check if cache is valid (shorter expiration for faster detection of new items)
   if (!forceRefresh && seriesCache.items.length > 0 && seriesCache.configHash === configHash) {
     const cacheAge = Date.now() - seriesCache.lastUpdated;
-    const maxAge = 5 * 60 * 1000; // 5 minutes
+    const maxAge = 60 * 1000; // 1 minute - refresh frequently to detect new series
     if (cacheAge < maxAge) {
       console.log(`[CACHE] Using cached series (${Math.floor(cacheAge / 1000)}s old, ${seriesCache.items.length} items)`);
       return seriesCache.items;
+    } else {
+      console.log(`[CACHE] Cache expired (${Math.floor(cacheAge / 1000)}s old), will reload...`);
     }
   }
   
