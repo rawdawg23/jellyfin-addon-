@@ -236,14 +236,17 @@ async function getCurrentUser(config) {
  */
 async function makeJellyfinApiRequest(url, params = {}, config) {
     try {
+        // Normalize URL - ensure no double slashes (except after protocol)
+        let normalizedUrl = url.replace(/([^:]\/)\/+/g, '$1');
+        
         // Log API key info (first 10 chars only for security)
         const apiKeyPreview = config.accessToken ? 
             `${config.accessToken.substring(0, 10)}...` : 'MISSING';
-        console.log(`[API] Request to ${url.split('?')[0]} with API key: ${apiKeyPreview}`);
+        console.log(`[API] Request to ${normalizedUrl.split('?')[0]} with API key: ${apiKeyPreview}`);
         
         const response = await axios({
             method: 'get',
-            url: url,
+            url: normalizedUrl,
             headers: { [HEADER_JELLYFIN_TOKEN]: config.accessToken },
             params: params,
         });

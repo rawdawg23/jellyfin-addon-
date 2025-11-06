@@ -73,7 +73,12 @@ function baseManifest () {
 // Helper: decode the cfg string into an object
 // ──────────────────────────────────────────────────────────────────────────
 function decodeCfg(str) {
-  return JSON.parse(Buffer.from(str, "base64url").toString("utf8"));
+  const cfg = JSON.parse(Buffer.from(str, "base64url").toString("utf8"));
+  // Normalize serverUrl - remove trailing slashes
+  if (cfg.serverUrl) {
+    cfg.serverUrl = cfg.serverUrl.replace(/\/+$/, '');
+  }
+  return cfg;
 }   
 
 // ──────────────────────────────────────────────────────────────────────────
