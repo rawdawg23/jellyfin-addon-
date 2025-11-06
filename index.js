@@ -354,9 +354,22 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
         );
         console.log(`[CATALOG] Filtered to ${items.length} movie/MusicVideo items`);
       } else if (type === "series") {
-        // Include Series only
-        items = allItems.filter(item => item.Type === "Series");
-        console.log(`[CATALOG] Filtered to ${items.length} series items`);
+        // Include Series only (filter out episodes, seasons, etc.)
+        items = allItems.filter(item => {
+          const isSeries = item.Type === "Series";
+          // Also check CollectionType to catch series in mixed libraries
+          const isSeriesCollection = item.CollectionType === "tvshows";
+          return isSeries || isSeriesCollection;
+        });
+        console.log(`[CATALOG] Filtered to ${items.length} series items (from ${allItems.length} total items)`);
+        // Debug: log item types if no series found
+        if (items.length === 0 && allItems.length > 0) {
+          const itemTypes = {};
+          allItems.slice(0, 20).forEach(item => {
+            itemTypes[item.Type] = (itemTypes[item.Type] || 0) + 1;
+          });
+          console.log(`[CATALOG] Debug: Sample item types in library:`, itemTypes);
+        }
       } else {
         // Unknown type, return all items
         items = allItems;
