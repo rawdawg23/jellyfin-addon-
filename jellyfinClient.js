@@ -249,6 +249,7 @@ async function makeJellyfinApiRequest(url, params = {}, config) {
             url: normalizedUrl,
             headers: { [HEADER_JELLYFIN_TOKEN]: config.accessToken },
             params: params,
+            timeout: 10000, // 10 second timeout per request to prevent hanging
         });
         return response.data;
     } catch (err) {
@@ -311,13 +312,21 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     else if (tvdbId) { directLookupParams.TvdbId = tvdbId; searchedIdField = "TvdbId"; }
     else if (anidbId) { directLookupParams.AniDbId = anidbId; searchedIdField = "AniDbId"; }
     delete directLookupParams.UserId; // /Users/{userId}/Items doesn't need UserId in params
+    // Add limit to prevent slow queries on large libraries
+    directLookupParams.Limit = 10; // Only need first match
+    
     if (searchedIdField) {
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config);
-        if (data?.Items?.length > 0) {
-            const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-            if (matches.length > 0) {
-                foundItems.push(...matches);
+        try {
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config);
+            if (data?.Items?.length > 0) {
+                const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                if (matches.length > 0) {
+                    foundItems.push(...matches);
+                }
             }
+        } catch (err) {
+            // Timeout or error - continue to Strategy 2
+            console.log(`[FIND] Strategy 1 failed or timed out: ${err.message}`);
         }
     }
 
@@ -343,13 +352,21 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             delete altParams.TvdbId;
             delete altParams.AniDbId;
             delete altParams.UserId; // /Users/{userId}/Items doesn't need UserId in params
+            altParams.Limit = 10; // Only need first match, reduce query time
 
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config);
-            if (data?.Items?.length > 0) {
-                const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                if (matches.length > 0) {
-                    foundItems.push(...matches);
+            try {
+                const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config);
+                if (data?.Items?.length > 0) {
+                    const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                    if (matches.length > 0) {
+                        foundItems.push(...matches);
+                        break; // Found match, stop trying other formats
+                    }
                 }
+            } catch (err) {
+                // Timeout or error - continue to next format
+                console.log(`[FIND] Strategy 2 format ${attemptFormat} failed or timed out: ${err.message}`);
+                continue;
             }
         }
     }
