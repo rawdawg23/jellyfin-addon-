@@ -921,124 +921,137 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
     console.log(`[FIND] ==========================================`);
     
-    // NEW APPROACH: Use in-memory cache instead of Jellyfin's broken search API
-    console.log(`[FIND] Loading series cache...`);
-    const series = await loadSeriesCache(config);
-    
-    if (series.length === 0) {
-        console.log(`[FIND] ❌ No series in cache/library`);
-        return [];
-    }
-    
-    console.log(`[FIND] Searching cache with ${series.length} series...`);
-    
-    // Search the cache
-    let foundItems = [];
-    
-    // Search by IMDb ID
-    if (imdbId) {
-        const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
-        const numericImdb = imdbId.replace('tt', '');
+    // FIRST: Search existing cache (if it has items) - FAST PATH
+    const configHash = getConfigHash(config);
+    if (seriesCache.items.length > 0 && seriesCache.configHash === configHash) {
+        console.log(`[FIND] Searching existing cache (${seriesCache.items.length} series)...`);
         
-        const matches1 = seriesCache.indexedByImdb.get(imdbKey) || [];
-        const matches2 = numericImdb ? (seriesCache.indexedByImdb.get(numericImdb) || []) : [];
+        let foundItems = [];
         
-        foundItems = [...matches1, ...matches2];
-        console.log(`[FIND] Cache search (IMDb: ${imdbKey}): Found ${foundItems.length} matches`);
-    }
-    
-    // Search by TMDb ID
-    if (foundItems.length === 0 && tmdbId) {
-        const tmdbKey = String(tmdbId);
-        foundItems = seriesCache.indexedByTmdb.get(tmdbKey) || [];
-        console.log(`[FIND] Cache search (TMDb: ${tmdbKey}): Found ${foundItems.length} matches`);
-    }
-    
-    // Search by TVDB ID
-    if (foundItems.length === 0 && tvdbId) {
-        const tvdbKey = String(tvdbId);
-        foundItems = seriesCache.indexedByTvdb.get(tvdbKey) || [];
-        console.log(`[FIND] Cache search (TVDB: ${tvdbKey}): Found ${foundItems.length} matches`);
-    }
-    
-    // Search by AniDB ID
-    if (foundItems.length === 0 && anidbId) {
-        const anidbKey = String(anidbId);
-        foundItems = seriesCache.indexedByAnidb.get(anidbKey) || [];
-        console.log(`[FIND] Cache search (AniDB: ${anidbKey}): Found ${foundItems.length} matches`);
-    }
-    
-    // Verify matches still match our criteria (double-check)
-    if (foundItems.length > 0) {
-        const verified = foundItems.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-        if (verified.length < foundItems.length) {
-            console.log(`[FIND] Warning: ${foundItems.length - verified.length} items filtered out during verification`);
+        // Search by IMDb ID
+        if (imdbId) {
+            const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+            const numericImdb = imdbId.replace('tt', '');
+            
+            const matches1 = seriesCache.indexedByImdb.get(imdbKey) || [];
+            const matches2 = numericImdb ? (seriesCache.indexedByImdb.get(numericImdb) || []) : [];
+            
+            foundItems = [...matches1, ...matches2];
+            console.log(`[FIND] Cache search (IMDb: ${imdbKey}): Found ${foundItems.length} matches`);
         }
-        foundItems = verified;
-    }
-    
-    if (foundItems.length === 0) {
-        console.log(`[FIND] ==========================================`);
-        console.log(`[FIND] ❌ NO MATCH FOUND in cache (${series.length} series)`);
-        console.log(`[FIND] Searched for: imdb=${imdbId}, tmdb=${tmdbId}, tvdb=${tvdbId}, anidb=${anidbId}`);
         
-        // Fallback: If cache is incomplete or empty, force reload all series
-        if (series.length === 0 || (series.length < 500 && (imdbId || tmdbId || tvdbId || anidbId))) {
-            console.log(`[FIND] Cache appears incomplete (${series.length} series), reloading all series...`);
-            try {
-                // Force reload all series into cache
-                const expandedSeries = await loadSeriesCache(config, true); // Force refresh
-                // Re-search in expanded cache
-                if (imdbId) {
-                    const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
-                    const numericImdb = imdbId.replace('tt', '');
-                    foundItems = [
-                        ...(seriesCache.indexedByImdb.get(imdbKey) || []),
-                        ...(numericImdb ? (seriesCache.indexedByImdb.get(numericImdb) || []) : [])
-                    ];
-                }
-                if (foundItems.length === 0 && tmdbId) {
-                    foundItems = seriesCache.indexedByTmdb.get(String(tmdbId)) || [];
-                }
-                if (foundItems.length === 0 && tvdbId) {
-                    foundItems = seriesCache.indexedByTvdb.get(String(tvdbId)) || [];
-                }
-                if (foundItems.length === 0 && anidbId) {
-                    foundItems = seriesCache.indexedByAnidb.get(String(anidbId)) || [];
-                }
-                // Verify matches
-                if (foundItems.length > 0) {
-                    foundItems = foundItems.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                }
-            } catch (err) {
-                console.log(`[FIND] Fallback reload failed: ${err.message}`);
+        // Search by TMDb ID
+        if (foundItems.length === 0 && tmdbId) {
+            const tmdbKey = String(tmdbId);
+            foundItems = seriesCache.indexedByTmdb.get(tmdbKey) || [];
+            console.log(`[FIND] Cache search (TMDb: ${tmdbKey}): Found ${foundItems.length} matches`);
+        }
+        
+        // Search by TVDB ID
+        if (foundItems.length === 0 && tvdbId) {
+            const tvdbKey = String(tvdbId);
+            foundItems = seriesCache.indexedByTvdb.get(tvdbKey) || [];
+            console.log(`[FIND] Cache search (TVDB: ${tvdbKey}): Found ${foundItems.length} matches`);
+        }
+        
+        // Search by AniDB ID
+        if (foundItems.length === 0 && anidbId) {
+            const anidbKey = String(anidbId);
+            foundItems = seriesCache.indexedByAnidb.get(anidbKey) || [];
+            console.log(`[FIND] Cache search (AniDB: ${anidbKey}): Found ${foundItems.length} matches`);
+        }
+        
+        // Verify matches
+        if (foundItems.length > 0) {
+            const verified = foundItems.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+            if (verified.length < foundItems.length) {
+                console.log(`[FIND] Warning: ${foundItems.length - verified.length} items filtered out during verification`);
+            }
+            foundItems = verified;
+            
+            if (foundItems.length > 0) {
+                console.log(`[FIND] ✅ SUCCESS: Found ${foundItems.length} matching series in cache`);
+                foundItems.forEach((item, idx) => {
+                    console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
+                });
+                return foundItems;
             }
         }
         
-        if (foundItems.length === 0) {
-            console.log(`[FIND] ==========================================`);
-            console.log(`[FIND] ❌ NO MATCH FOUND after all attempts`);
-            console.log(`[FIND] Cache contains ${seriesCache.items.length} series`);
-            console.log(`[FIND] ==========================================`);
-        } else {
-            console.log(`[FIND] ==========================================`);
-            console.log(`[FIND] ✅ SUCCESS (after fallback): Found ${foundItems.length} matching series`);
-            foundItems.forEach((item, idx) => {
-                console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
-                console.log(`[FIND]   ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
-            });
-            console.log(`[FIND] ==========================================`);
-        }
-    } else {
-        console.log(`[FIND] ==========================================`);
-        console.log(`[FIND] ✅ SUCCESS: Found ${foundItems.length} matching series in cache`);
-        foundItems.forEach((item, idx) => {
-            console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
-            console.log(`[FIND]   ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
-        });
-        console.log(`[FIND] ==========================================`);
+        console.log(`[FIND] ❌ Not found in cache, trying direct API search...`);
     }
     
+    // FALLBACK: Direct API search (like original Emby StreamBridge) - FAST, doesn't load all series
+    console.log(`[FIND] Attempting direct API search (fast, no full cache load)...`);
+    
+    let foundItems = [];
+    const baseSeriesParams = {
+        IncludeItemTypes: ITEM_TYPE_SERIES,
+        Recursive: true,
+        Fields: DEFAULT_FIELDS,
+        Limit: 10,
+        Filters: "IsNotFolder",
+        UserId: config.userId
+    };
+
+    // Strategy 1: Direct ID Lookup (/Items)
+    const directLookupParams = { ...baseSeriesParams };
+    let searchedIdField = "";
+    if (imdbId) { directLookupParams.ImdbId = imdbId; searchedIdField = "ImdbId"; }
+    else if (tmdbId) { directLookupParams.TmdbId = tmdbId; searchedIdField = "TmdbId"; }
+    else if (tvdbId) { directLookupParams.TvdbId = tvdbId; searchedIdField = "TvdbId"; }
+    else if (anidbId) { directLookupParams.AniDbId = anidbId; searchedIdField = "AniDbId"; }
+    
+    if (searchedIdField) {
+        try {
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Items`, directLookupParams, config, 10000);
+            if (data?.Items?.length > 0) {
+                const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                if (matches.length > 0) {
+                    console.log(`[FIND] ✅ Found via /Items with ${searchedIdField}`);
+                    foundItems.push(...matches);
+                }
+            }
+        } catch (err) {
+            console.log(`[FIND] Strategy 1 failed: ${err.message}`);
+        }
+    }
+
+    // Strategy 2: AnyProviderIdEquals (only if Strategy 1 failed)
+    if (foundItems.length === 0) {
+        const altParams = { ...baseSeriesParams };
+        delete altParams.UserId; // Remove UserId for /Users/{userId}/Items endpoint
+        
+        if (imdbId) {
+            const formats = [`imdb.${imdbId}`, `Imdb.${imdbId}`, `imdb.${imdbId.replace('tt', '')}`, `Imdb.${imdbId.replace('tt', '')}`];
+            for (const format of formats.slice(0, 2)) { // Only try first 2 formats for speed
+                try {
+                    altParams.AnyProviderIdEquals = format;
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    if (data?.Items?.length > 0) {
+                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                        if (matches.length > 0) {
+                            console.log(`[FIND] ✅ Found via AnyProviderIdEquals=${format}`);
+                            foundItems.push(...matches);
+                            break;
+                        }
+                    }
+                } catch (err) {
+                    console.log(`[FIND] Strategy 2 (${format}) failed: ${err.message}`);
+                }
+            }
+        }
+    }
+    
+    if (foundItems.length === 0) {
+        console.log(`[FIND] ❌ NO MATCH FOUND after direct API search`);
+    } else {
+        console.log(`[FIND] ✅ SUCCESS: Found ${foundItems.length} matching series via API`);
+        foundItems.forEach((item, idx) => {
+            console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
+        });
+    }
+
     return foundItems;
 }
 
