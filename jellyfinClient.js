@@ -1214,7 +1214,7 @@ async function getMovies(config) {
     
     try {
         const allItems = [];
-        const pageSize = 1000; // Items per page
+        const pageSize = 10000; // Items per page (increased to reduce requests)
         let startIndex = 0;
         let hasMore = true;
         
@@ -1283,7 +1283,7 @@ async function getSeries(config) {
     
     try {
         const allItems = [];
-        const pageSize = 1000; // Items per page
+        const pageSize = 10000; // Items per page (increased to reduce requests)
         let startIndex = 0;
         let hasMore = true;
         
