@@ -383,6 +383,57 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         }
     }
 
+    // --- Strategy 3: Name/Year Search (fallback when ProviderIds don't match) ---
+    // This handles cases where movies exist in Jellyfin but don't have ProviderIds set
+    // We'll search by getting all movies and doing a name/year match
+    if (foundItems.length === 0 && imdbId) {
+        console.log(`[FIND] Strategy 3: ProviderId search failed, trying name/year search for IMDb ${imdbId}`);
+        try {
+            // Fetch movie metadata from TMDB using IMDb ID (TMDB API doesn't require auth for basic queries)
+            const tmdbResponse = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
+                params: { api_key: '4f298a53e552283bee957836a529baec', external_source: 'imdb_id' }, // Public TMDB API key
+                timeout: 5000
+            });
+            
+            if (tmdbResponse?.data?.movie_results?.[0]) {
+                const tmdbMovie = tmdbResponse.data.movie_results[0];
+                const movieName = tmdbMovie.title;
+                const releaseYear = tmdbMovie.release_date ? new Date(tmdbMovie.release_date).getFullYear() : null;
+                
+                console.log(`[FIND] Strategy 3: Found TMDB metadata - "${movieName}" (${releaseYear})`);
+                
+                // Search Jellyfin by name and year
+                const searchParams = {
+                    ...baseMovieParams,
+                    SearchTerm: movieName,
+                    Limit: 50 // Search more items to find matches
+                };
+                
+                const searchData = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, searchParams, config);
+                if (searchData?.Items?.length > 0) {
+                    // Find best match by name similarity and year
+                    const matches = searchData.Items.filter(item => {
+                        const nameMatch = item.Name && item.Name.toLowerCase().includes(movieName.toLowerCase());
+                        const yearMatch = !releaseYear || !item.ProductionYear || 
+                            Math.abs(item.ProductionYear - releaseYear) <= 1; // Allow 1 year difference
+                        return nameMatch && yearMatch;
+                    });
+                    
+                    if (matches.length > 0) {
+                        console.log(`[FIND] Strategy 3: Found ${matches.length} movie(s) by name/year match`);
+                        foundItems.push(...matches);
+                    } else {
+                        console.log(`[FIND] Strategy 3: No movies found matching name/year`);
+                    }
+                }
+            } else {
+                console.log(`[FIND] Strategy 3: Could not fetch TMDB metadata for IMDb ${imdbId}`);
+            }
+        } catch (err) {
+            console.log(`[FIND] Strategy 3: Error fetching TMDB metadata:`, err.message);
+        }
+    }
+
     return foundItems; // Return foundItems if found after all attempts
 }
 
