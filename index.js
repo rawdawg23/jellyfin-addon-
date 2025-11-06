@@ -447,9 +447,14 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
     }
     
     // Cache catalog for 30 seconds for near-instant updates when media is added to Jellyfin
-    res.set('Cache-Control', 'public, max-age=30');
-    clearTimeout(timeout);
-    res.json({ metas });
+    if (!timeoutTriggered && !res.headersSent) {
+      res.set('Cache-Control', 'public, max-age=30');
+      clearTimeout(timeout);
+      res.json({ metas });
+    } else {
+      clearTimeout(timeout);
+      console.log("[CATALOG] Response already sent (timeout or error), skipping");
+    }
   } catch (e) {
     clearTimeout(timeout);
     console.error("[CATALOG] Handler error:", e);
