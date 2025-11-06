@@ -1,6 +1,6 @@
-# StreamBridge: Emby to Stremio
+# StreamBridge: Jellyfin to Stremio
 
-**StreamBridge** is an unofficial Stremio addon that lets you stream content from your personal or shared Emby server using IMDb or TMDb IDs. It works as a **stream resolver**: when you browse titles in Stremio using catalog addons like **Cinemeta** (or any other metadata addon), StreamBridge checks if the clicked movie or episode exists in your Emby library and, if found, returns a direct play link to stream it instantly from the emby server.
+**StreamBridge** is an unofficial Stremio addon that lets you stream content from your personal or shared Jellyfin server using IMDb or TMDb IDs. It works as a **stream resolver**: when you browse titles in Stremio using catalog addons like **Cinemeta** (or any other metadata addon), StreamBridge checks if the clicked movie or episode exists in your Jellyfin library and, if found, returns a direct play link to stream it instantly from the jellyfin server.
 
 ## 🔧 Features
 
@@ -9,12 +9,12 @@
 | **One-page setup**             | Custom User configuration page to help user get thier **User ID** + **Access Token** *and* builds the ready-to-install link. |
 | **IMDb / TMDb / Tvdb / Anidb matching**       | Works with IDs like `tt1234567` or `tmdb:98765` etc                                                   |
 | **Direct-play multi-quality**  | Direct play URLs with support for different quality options       |
-| **Subtitle support**           | Automatic subtitle loading from your Emby library        |
+| **Subtitle support**           | Automatic subtitle loading from your Jellyfin library        |
 
 ## ⚠️ Requirements
 
-- **HTTPS Required**: Your Emby server must be accessible via HTTPS. HTTP and localhost addresses are not supported.
-- **Public Access**: The Emby server must be accessible from the internet (not just localhost).
+- **HTTPS Required**: Your Jellyfin server must be accessible via HTTPS. HTTP and localhost addresses are not supported.
+- **Public Access**: The Jellyfin server must be accessible from the internet (not just localhost).
 
 ## ❓ FAQ
 
@@ -27,11 +27,10 @@
    - ✅ `https://your-server.com:8096`
    - **Why?** Modern browsers and Stremio require secure connections for security. HTTP connections are blocked by default.   
 
-2. **Using Emby Connect credentials instead of server credentials**
-   - ❌ Your Emby Connect email/password
-   - ✅ Your Emby server username/password (the ones you use to log into your Emby web interface)
-   - **Where to get them?** Go to your Emby server web interface → Users → Your username → Edit → Set a password if you haven't already
-   - **Note:** These are the same credentials you use when logging into your Emby server directly in a browser
+2. **Using incorrect credentials**
+   - Make sure you're using your Jellyfin server username and password
+   - **Where to get them?** Go to your Jellyfin server web interface → Users → Your username → Edit → Set a password if you haven't already
+   - **Note:** These are the same credentials you use when logging into your Jellyfin server directly in a browser
 
 3. **Using localhost addresses**
    - ❌ `localhost:8096` or `127.0.0.1:8096`
@@ -39,8 +38,8 @@
    - **Why?** The addon runs on the internet and needs to reach your server from outside your network
 
 4. **Server not accessible from internet**
-   - Make sure your Emby server is accessible via HTTPS from outside your local network
-   - **Setup needed:** Configure your router/firewall to forward HTTPS traffic to your Emby server
+   - Make sure your Jellyfin server is accessible via HTTPS from outside your local network
+   - **Setup needed:** Configure your router/firewall to forward HTTPS traffic to your Jellyfin server
    - **Alternative:** Use a reverse proxy (nginx, Caddy) or VPN solution to expose your server securely
 
 --
@@ -57,12 +56,12 @@ To use this addon:
    ```
 
 3. Use **Configure** button to open the configure page. On the configure page:
-      - In **Step 1**, enter your Emby **ServerURL**, **username** and **password**
+      - In **Step 1**, enter your Jellyfin **ServerURL**, **username** and **password**
       - Click **Get Access Info**. 
       - Your **User ID** and **Access Token** appear and auto-fill the form below.
 
 4. Click **Create & Install Add-on**. A `stremio://…` link opens or focuses the Stremio app; confirm the install prompt.
-5. The addon will return streams for matching titles in your Emby server when clicked in Stremio.
+5. The addon will return streams for matching titles in your Jellyfin server when clicked in Stremio.
 
 You can also use the link below and skip step 1 and 2.
 
@@ -105,7 +104,7 @@ https://39427cdac546-streambridge.baby-beamup.club/configure
 
 * Node.js
 * [stremio-addon-sdk](https://github.com/Stremio/stremio-addon-sdk)
-* Emby REST API
+* Jellyfin REST API
 * Axios
 * express
 
@@ -113,7 +112,7 @@ https://39427cdac546-streambridge.baby-beamup.club/configure
 
 ## ⚠️ Disclaimer
 
-This addon is for **educational and personal use only**. It is not affiliated with or endorsed by Emby or Stremio.
+This addon is for **educational and personal use only**. It is not affiliated with or endorsed by Jellyfin or Stremio.
 
 ---
 
