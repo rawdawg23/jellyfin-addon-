@@ -864,7 +864,7 @@ function formatFileSize(bytes) {
 function buildStreamDescription(mediaInfo) {
   const parts = [];
   
-  // Resolution (Quality tag + Dimensions)
+  // Resolution (Quality tag + Dimensions) - format: "4K • 3840x2160"
   if (mediaInfo.qualityTag && mediaInfo.qualityTag !== 'Unknown') {
     parts.push(mediaInfo.qualityTag);
   }
@@ -872,7 +872,7 @@ function buildStreamDescription(mediaInfo) {
     parts.push(mediaInfo.resolutionDimensions);
   }
   
-  // Video Codec (HDR + Video Codec)
+  // Video Codec (HDR + Video Codec) - format: "DV • HEVC 10bit"
   const videoParts = [];
   if (mediaInfo.hdrTag) {
     videoParts.push(mediaInfo.hdrTag);
@@ -884,22 +884,22 @@ function buildStreamDescription(mediaInfo) {
     parts.push(videoParts.join(' '));
   }
   
-  // Audio
+  // Audio - format: "DTS 5.1"
   if (mediaInfo.audioTag) {
     parts.push(mediaInfo.audioTag);
   }
   
-  // Container
+  // Container - format: "MKV"
   if (mediaInfo.container) {
     parts.push(mediaInfo.container);
   }
   
-  // Bitrate
+  // Bitrate - format: "28.1Mbps"
   if (mediaInfo.bitrateFormatted) {
     parts.push(mediaInfo.bitrateFormatted);
   }
   
-  // Size
+  // Size - format: "19.2GB"
   if (mediaInfo.sizeFormatted) {
     parts.push(mediaInfo.sizeFormatted);
   }
@@ -909,7 +909,8 @@ function buildStreamDescription(mediaInfo) {
     parts.push('REMUX');
   }
   
-  // Join all parts with bullet separator (matching Emby format)
+  // Join all parts with bullet separator (matching Emby format exactly)
+  // Result: "4K • 3840x2160 DV • HEVC 10bit DTS 5.1 MKV • 28.1Mbps • 19.2GB"
   return parts.length > 0 ? parts.join(' • ') : 'Direct Play';
 }
 
