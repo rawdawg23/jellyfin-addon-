@@ -104,6 +104,13 @@ app.get("/:cfg/manifest.json", (req, res) => {
   const serverHostname = (cfg && cfg.serverUrl) ? cfg.serverUrl.replace(/^https?:\/\//, "") : "Unknown Server";
   mf.name += ` (${serverHostname})`;
   mf.behaviorHints.configurationRequired = false;
+  
+  // Update catalog names to include server info
+  if (mf.catalogs && mf.catalogs.length > 0) {
+    mf.catalogs.forEach(cat => {
+      cat.name = `${cat.name} (${serverHostname})`;
+    });
+  }
 
   res.json(mf);
 });
@@ -184,13 +191,19 @@ app.get("/:cfg/catalog/:type/:catalogId.json", async (req, res) => {
   }
 
   try {
+    console.log(`[CATALOG] Request for ${type}/${catalogId}`);
     let items = [];
     
     if (type === "movie" && catalogId === "jellyfin-movies") {
+      console.log(`[CATALOG] Fetching movies from Jellyfin...`);
       items = await jellyfin.getMovies(cfg) || [];
+      console.log(`[CATALOG] Found ${items.length} movies`);
     } else if (type === "series" && catalogId === "jellyfin-series") {
+      console.log(`[CATALOG] Fetching series from Jellyfin...`);
       items = await jellyfin.getSeries(cfg) || [];
+      console.log(`[CATALOG] Found ${items.length} series`);
     } else {
+      console.log(`[CATALOG] Unknown catalog: ${type}/${catalogId}`);
       return res.json({ metas: [] });
     }
 
@@ -238,6 +251,8 @@ app.get("/:cfg/catalog/:type/:catalogId.json", async (req, res) => {
       })
       .filter(meta => meta !== null); // Remove nulls
 
+    console.log(`[CATALOG] Converted to ${metas.length} Stremio meta items`);
+    
     // Cache catalog for 1 hour
     res.set('Cache-Control', 'public, max-age=3600');
     res.json({ metas });
