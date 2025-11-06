@@ -3,8 +3,8 @@ const axios = require("axios");
 // Configuration - UPDATE THESE VALUES
 const CONFIG = {
     serverUrl: "https://ku98faa.freshticks.xyz:443",
-    accessToken: "fdfa03901d...", // Your API key
-    userId: "5f8170cc22064e18882e2e57c7406e35" // Your User ID
+    accessToken: "0aa1e72f30f64c628086a3ea50bbda5b", // Your API key
+    userId: "5f8170cc22064e18882e2e57c7406e35" // Your User ID (already set)
 };
 
 const HEADER_JELLYFIN_TOKEN = 'X-Emby-Token';
@@ -24,6 +24,12 @@ async function makeJellyfinApiRequest(url, params = {}, timeoutMs = 10000) {
         console.log(`\n[API] Request to ${normalizedUrl}`);
         console.log(`[API] Params:`, JSON.stringify(params, null, 2));
         
+        // Check if API key is set
+        if (!CONFIG.accessToken || CONFIG.accessToken.includes('...')) {
+            console.error(`❌ ERROR: API key not set! Please update CONFIG.accessToken in the script with your full API key.`);
+            return null;
+        }
+        
         const response = await axios.get(normalizedUrl, {
             params: params,
             headers: {
@@ -37,6 +43,9 @@ async function makeJellyfinApiRequest(url, params = {}, timeoutMs = 10000) {
     } catch (err) {
         if (err.response) {
             console.error(`❌ HTTP ${err.response.status}: ${err.response.statusText}`);
+            if (err.response.status === 401) {
+                console.error(`   ⚠️  Authentication failed! Check your API key in CONFIG.accessToken`);
+            }
             if (err.response.data) {
                 console.error(`   Error:`, JSON.stringify(err.response.data, null, 2));
             }
@@ -189,24 +198,59 @@ async function testTvShowSearch(tvShow) {
         }
     }
     
-    // Strategy 4: List all Series and search manually
+    // Strategy 4: List ALL Series with pagination and search manually
     if (!found) {
-        console.log(`\n[STRATEGY 4] List all Series and search manually`);
-        const listParams = {
-            IncludeItemTypes: 'Series',
-            Recursive: true,
-            Fields: 'ProviderIds,Name,Id',
-            Limit: 100,
-            UserId: CONFIG.userId
-        };
+        console.log(`\n[STRATEGY 4] List ALL Series (with pagination) and search manually`);
+        const allSeries = [];
+        const pageSize = 500;
+        let startIndex = 0;
+        let hasMore = true;
+        let totalRecords = 0;
         
-        const data = await makeJellyfinApiRequest(`${CONFIG.serverUrl}/Users/${CONFIG.userId}/Items`, listParams);
+        while (hasMore) {
+            const listParams = {
+                IncludeItemTypes: 'Series',
+                Recursive: true,
+                Fields: 'ProviderIds,Name,Id',
+                Limit: pageSize,
+                StartIndex: startIndex,
+                UserId: CONFIG.userId
+            };
+            
+            const data = await makeJellyfinApiRequest(`${CONFIG.serverUrl}/Users/${CONFIG.userId}/Items`, listParams);
+            
+            if (data?.Items?.length > 0) {
+                allSeries.push(...data.Items);
+                totalRecords = data.TotalRecordCount || allSeries.length;
+                console.log(`  Loaded ${allSeries.length} / ${totalRecords} series...`);
+                
+                if (data.Items.length < pageSize || allSeries.length >= totalRecords) {
+                    hasMore = false;
+                } else {
+                    startIndex += pageSize;
+                    // Safety limit
+                    if (startIndex >= pageSize * 100) {
+                        console.log(`  ⚠️  Reached safety limit, stopping pagination`);
+                        hasMore = false;
+                    }
+                }
+            } else {
+                hasMore = false;
+            }
+        }
         
-        if (data?.Items?.length > 0) {
-            console.log(`✅ Found ${data.Items.length} total series in library`);
+        if (allSeries.length > 0) {
+            console.log(`✅ Found ${allSeries.length} total series in library`);
+            
+            // Show sample of series and their ProviderIds
+            console.log(`\n  Sample of series in library (first 10):`);
+            allSeries.slice(0, 10).forEach((item, idx) => {
+                console.log(`    ${idx + 1}. "${item.Name}" (ID: ${item.Id})`);
+                console.log(`       ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
+            });
             
             // Search by name
-            const nameMatches = data.Items.filter(i => 
+            const nameMatches = allSeries.filter(i => 
                 i.Name && i.Name.toLowerCase().includes(tvShow.name.toLowerCase())
             );
             
@@ -219,7 +263,7 @@ async function testTvShowSearch(tvShow) {
             }
             
             // Search by ProviderIds
-            const idMatches = data.Items.filter(i => 
+            const idMatches = allSeries.filter(i => 
                 isMatchingProviderId(i.ProviderIds, tvShow.imdbId, tvShow.tmdbId, tvShow.tvdbId)
             );
             
@@ -231,8 +275,17 @@ async function testTvShowSearch(tvShow) {
                 });
                 found = true;
             } else {
-                console.log(`\n  ❌ No series found matching ProviderIds`);
+                console.log(`\n  ❌ No series found matching ProviderIds in ${allSeries.length} total series`);
             }
+            
+            // Count how many series have IMDb IDs
+            const seriesWithImdb = allSeries.filter(i => 
+                i.ProviderIds && (i.ProviderIds.Imdb || i.ProviderIds.imdb || i.ProviderIds.IMDB)
+            );
+            console.log(`\n  📊 Statistics:`);
+            console.log(`     - Series with IMDb IDs: ${seriesWithImdb.length} / ${allSeries.length}`);
+            console.log(`     - Series with TMDb IDs: ${allSeries.filter(i => i.ProviderIds && (i.ProviderIds.Tmdb || i.ProviderIds.tmdb || i.ProviderIds.TMDB)).length} / ${allSeries.length}`);
+            console.log(`     - Series with TVDB IDs: ${allSeries.filter(i => i.ProviderIds && (i.ProviderIds.Tvdb || i.ProviderIds.tvdb || i.ProviderIds.TVDB)).length} / ${allSeries.length}`);
         }
     }
     
