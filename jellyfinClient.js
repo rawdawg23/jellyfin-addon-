@@ -1243,8 +1243,16 @@ async function getMovies(config) {
             
             allItems.push(...items);
             
-            // Check if we've fetched all items
-            if (items.length < pageSize || allItems.length >= totalRecords) {
+            // Check if we've fetched all items based on TotalRecordCount
+            if (totalRecords > 0) {
+                // Use TotalRecordCount as authoritative source
+                if (allItems.length >= totalRecords) {
+                    hasMore = false;
+                } else {
+                    startIndex += pageSize;
+                }
+            } else if (items.length < pageSize) {
+                // Fallback: if TotalRecordCount not available, stop when we get fewer items than page size
                 hasMore = false;
             } else {
                 startIndex += pageSize;
@@ -1312,8 +1320,16 @@ async function getSeries(config) {
             
             allItems.push(...items);
             
-            // Check if we've fetched all items
-            if (items.length < pageSize || allItems.length >= totalRecords) {
+            // Check if we've fetched all items based on TotalRecordCount
+            if (totalRecords > 0) {
+                // Use TotalRecordCount as authoritative source
+                if (allItems.length >= totalRecords) {
+                    hasMore = false;
+                } else {
+                    startIndex += pageSize;
+                }
+            } else if (items.length < pageSize) {
+                // Fallback: if TotalRecordCount not available, stop when we get fewer items than page size
                 hasMore = false;
             } else {
                 startIndex += pageSize;
