@@ -359,18 +359,19 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         UserId: config.userId
     };
 
-    // --- Strategy 1: Direct ID Lookup (/Items) - like original Emby ---
+    // --- Strategy 1: Direct ID Lookup (/Users/{UserId}/Items) - Jellyfin requires UserId endpoint ---
     const directLookupParams = { ...baseMovieParams };
     let searchedIdField = "";
     if (imdbId) { directLookupParams.ImdbId = imdbId; searchedIdField = "ImdbId"; }
     else if (tmdbId) { directLookupParams.TmdbId = tmdbId; searchedIdField = "TmdbId"; }
     else if (tvdbId) { directLookupParams.TvdbId = tvdbId; searchedIdField = "TvdbId"; }
     else if (anidbId) { directLookupParams.AniDbId = anidbId; searchedIdField = "AniDbId"; }
+    delete directLookupParams.UserId; // Remove UserId from params for /Users/{userId}/Items endpoint
     
     if (searchedIdField) {
-        console.log(`[FIND] Strategy 1: Searching with ${searchedIdField}=${directLookupParams[searchedIdField]} using /Items endpoint`);
+        console.log(`[FIND] Strategy 1: Searching with ${searchedIdField}=${directLookupParams[searchedIdField]} using /Users/{userId}/Items endpoint`);
         try {
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Items`, directLookupParams, config, 30000);
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 30000);
             console.log(`[FIND] Strategy 1: Received ${data?.Items?.length || 0} items from API`);
             if (data?.Items?.length > 0) {
                 // Debug: Show ProviderIds of first few items
