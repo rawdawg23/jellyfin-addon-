@@ -126,14 +126,14 @@ iframe[id*="kofi-wo-container"] {
   <h2>2 · Generate Install Link</h2>
   <form id="cfg">
     <label>Jellyfin Server URL</label>
-    <input name="serverUrl" required>
+    <input name="serverUrl" placeholder="https://your-server.com:443" required>
     <label>User ID</label>
-    <input name="userId" required>
+    <input name="userId" placeholder="Enter your Jellyfin User ID" required>
     <label>API Key (Access Token)</label>
-    <input name="accessToken" required>
+    <input name="accessToken" type="text" placeholder="Enter your API key manually or use Step 1 to auto-fill" required>
     <small style="color:var(--text-dim);font-size:0.85rem;margin-top:0.25rem;display:block;">
-      💡 <strong>Tip:</strong> You can get a permanent API key from Jellyfin: 
-      Dashboard → Settings → API Keys → Create API Key
+      💡 <strong>Manual Entry:</strong> You can enter your API key directly here, or use Step 1 above to auto-fill.<br>
+      💡 <strong>Permanent Key:</strong> Get a permanent API key from Jellyfin: Dashboard → Settings → API Keys → Create API Key
     </small>
     <button id="cfgBtn">Create & Install Addon</button>
   </form>
@@ -187,11 +187,11 @@ $("#helper").addEventListener("submit", async e=>{
     $("#tok").textContent = data?.AccessToken || "";
     $("#helperOut").style.display="block";
 
-    /* autofill config form */
+    /* autofill config form only if fields are empty */
     const cf=$("#cfg");
-    cf.serverUrl.value   ||= url;
-    cf.userId.value      ||= data?.User?.Id||"";
-    cf.accessToken.value ||= data?.AccessToken||"";
+    if (!cf.serverUrl.value) cf.serverUrl.value = url;
+    if (!cf.userId.value) cf.userId.value = data?.User?.Id||"";
+    if (!cf.accessToken.value) cf.accessToken.value = data?.AccessToken||"";
   }catch(err){
     alert("❌ "+err.message);
   }finally{
