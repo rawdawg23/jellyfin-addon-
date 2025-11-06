@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>StreamBridge • Emby ↔ Stremio Setup</title>
+<title>StreamBridge • Jellyfin ↔ Stremio Setup</title>
 
 <!-- ----------  Design tokens  ---------- -->
 <style>
@@ -95,8 +95,8 @@ iframe[id*="kofi-wo-container"] {
       <strong style="color:#fbbf24;">Important: HTTPS Required</strong>
     </div>
     <p style="margin:0;font-size:0.9rem;color:var(--text-dim);line-height:1.4;">
-      This addon only works with Emby servers accessible via <strong>HTTPS</strong>. 
-      HTTP and localhost addresses are not supported. Make sure your Emby server is accessible 
+      This addon only works with Jellyfin servers accessible via <strong>HTTPS</strong>. 
+      HTTP and localhost addresses are not supported. Make sure your Jellyfin server is accessible 
       through a secure HTTPS connection.
     </p>
   </div>
@@ -104,12 +104,12 @@ iframe[id*="kofi-wo-container"] {
   <!--  1· Helper  -->
   <h2>1 · Fetch User ID & Token</h2>
   <form id="helper">
-    <label>Emby Server URL</label>
+    <label>Jellyfin Server URL</label>
     <input name="url" placeholder="https://example.com:8096" required>
-    <label>Server Username (not Emby Connect)</label>
-    <input name="user" placeholder="Your Emby server username" required>
-    <label>Server Password (not Emby Connect)</label>
-    <input name="pass" type="password" placeholder="Your Emby server password" required>
+    <label>Server Username</label>
+    <input name="user" placeholder="Your Jellyfin server username" required>
+    <label>Server Password</label>
+    <input name="pass" type="password" placeholder="Your Jellyfin server password" required>
     <button id="helperBtn">Get Access Info</button>
   </form>
 
@@ -121,7 +121,7 @@ iframe[id*="kofi-wo-container"] {
   <!--  2· Configure  -->
   <h2>2 · Generate Install Link</h2>
   <form id="cfg">
-    <label>Emby Server URL</label>
+    <label>Jellyfin Server URL</label>
     <input name="serverUrl" required>
     <label>User ID</label>
     <input name="userId" required>
@@ -157,7 +157,7 @@ $("#helper").addEventListener("submit", async e=>{
 
   // Ensure HTTPS
   if(!url.startsWith("https://")) {
-    alert("❌ Please use HTTPS URLs only. Your Emby server must be accessible via HTTPS for this addon to work.");
+    alert("❌ Please use HTTPS URLs only. Your Jellyfin server must be accessible via HTTPS for this addon to work.");
     btn.disabled=false;btn.textContent="Get Access Info";
     return;
   }
@@ -199,21 +199,41 @@ $("#cfg").addEventListener("submit",e=>{
 
   // Ensure HTTPS in config form
   if(!serverUrl.startsWith("https://")) {
-    alert("❌ Please use HTTPS URLs only. Your Emby server must be accessible via HTTPS for this addon to work.");
+    alert("❌ Please use HTTPS URLs only. Your Jellyfin server must be accessible via HTTPS for this addon to work.");
     return;
   }
 
   const cfg64=btoa(unescape(encodeURIComponent(JSON.stringify(cfg))))
                 .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 
-  const httpURL    = `${location.origin}/${cfg64}/manifest.json`;
-  const stremioURL = `stremio://${location.host}/${cfg64}/manifest.json`;
+  // Build the full addon URL with explicit protocol and port
+  const protocol = location.protocol;
+  const host = location.host; // This includes port for localhost:7000
+  const httpURL = `${protocol}//${host}/${cfg64}/manifest.json`;
+  
+  // For localhost, use 127.0.0.1 instead to avoid Stremio protocol handler issues
+  // Stremio's stremio:// handler may convert localhost to https:// and drop the port
+  const hostForStremio = host.includes('localhost') ? host.replace('localhost', '127.0.0.1') : host;
+  const stremioURL = `stremio://${hostForStremio}/${cfg64}/manifest.json`;
+  
+  // Also provide HTTP URL explicitly for localhost (since stremio:// might not work)
+  const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
+  const localhostWarning = isLocalhost ? 
+    `<div style="background:#1e293b;border:1px solid #475569;border-radius:8px;padding:1rem;margin-top:1rem;">
+      <strong style="color:#fbbf24;">⚠️ Localhost Note:</strong>
+      <p style="margin:0.5rem 0 0;font-size:0.9rem;color:var(--text-dim);">
+        For local development, Stremio may have issues with the stremio:// link. 
+        Instead, copy the HTTP URL below and paste it manually in Stremio via 
+        <em>Add-ons → Install via URL</em>.
+      </p>
+    </div>` : '';
 
   $("#cfgOut").innerHTML = `
     <p><a href="${stremioURL}">➜ Install directly in Stremio</a></p>
     <small>Or copy this URL and add it via <em>Add-ons → Install via URL</em>:</small>
     <pre>${httpURL}</pre>
     <button class="copy-btn" onclick="navigator.clipboard.writeText('${httpURL}').then(()=>toast('Copied URL'))">Copy URL</button>
+    ${localhostWarning}
   `;
 });
 </script>

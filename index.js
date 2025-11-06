@@ -1,5 +1,5 @@
 /**
- * StreamBridge – Emby → Stremio addon
+ * StreamBridge – Jellyfin → Stremio addon
  * Full Express server with parameterised manifest + stream routes
  * User data is embedded in the URL path as a base64-url string.
  */
@@ -7,7 +7,7 @@
 const express      = require("express");
 const path         = require("path");
 const cors         = require("cors");
-const emby         = require("./embyClient");   
+const jellyfin     = require("./jellyfinClient");   
 require("dotenv").config();
 
 const PORT = process.env.PORT || 7000;
@@ -24,11 +24,11 @@ app.use(express.static(path.join(__dirname, "public")));
 // ──────────────────────────────────────────────────────────────────────────
 function baseManifest () {
   return {
-    id      : "org.streambridge.embyresolver",
+    id      : "org.streambridge.jellyfinresolver",
     version : "1.1.2",
-    name    : "StreamBridge: Emby to Stremio",
+    name    : "StreamBridge: Jellyfin to Stremio",
     description:
-      "Stream media from your personal or shared Emby server using IMDb/TMDB IDs.",
+      "Stream media from your personal or shared Jellyfin server using IMDb/TMDB IDs.",
     catalogs : [],
     resources: [
       { name: "stream",
@@ -38,9 +38,9 @@ function baseManifest () {
     types: ["movie", "series"],
     behaviorHints: { configurable: true, configurationRequired: true },
     config: [
-      { key: "serverUrl",   type: "text", title: "Emby Server URL",  required: true },
-      { key: "userId",      type: "text", title: "Emby User ID",     required: true },
-      { key: "accessToken", type: "text", title: "Emby Access Token", required: true }
+      { key: "serverUrl",   type: "text", title: "Jellyfin Server URL",  required: true },
+      { key: "userId",      type: "text", title: "Jellyfin User ID",     required: true },
+      { key: "accessToken", type: "text", title: "Jellyfin Access Token", required: true }
     ]
   };
 }
@@ -99,7 +99,7 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
     return res.json({ streams: [] });
 
   try {
-    const raw = await emby.getStream(id, cfg);         
+    const raw = await jellyfin.getStream(id, cfg);         
     const streams = (raw || [])
       .filter(s => s.directPlayUrl)
       .map(s => {
@@ -108,11 +108,11 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
           filename: s.mediaInfo?.filename ?? undefined,
           videoSize: s.mediaInfo?.size ?? undefined,
           notWebReady: true, // Default to true for safety
-          bingeGroup: `emby-${s.itemId}` // Enables auto-play for series episodes
+          bingeGroup: `jellyfin-${s.itemId}` // Enables auto-play for series episodes
         };
         
         return {
-          name: "Emby", // Simple consistent name for all streams
+          name: "Jellyfin", // Simple consistent name for all streams
           description: s.streamDescription || s.qualityTitle || "Direct Play", // Full detailed technical information
           url: s.directPlayUrl,
           behaviorHints: behaviorHints,
@@ -147,6 +147,13 @@ app.get("/manifest.json", (_req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
+// ROOT route  →  / (redirects to configure page)
+// ──────────────────────────────────────────────────────────────────────────
+app.get("/", (_req, res) => {
+  res.redirect("/configure");
+});
+
+// ──────────────────────────────────────────────────────────────────────────
 // CONFIGURE route  →  /configure
 // ──────────────────────────────────────────────────────────────────────────
 app.get("/configure", (_req, res) =>
@@ -158,6 +165,7 @@ app.get("/:cfg/configure", (req, res) => {
 // ──────────────────────────────────────────────────────────────────────────
 // Start the server
 // ──────────────────────────────────────────────────────────────────────────
-app.listen(PORT, () =>
-  console.log(`🚀  StreamBridge up at http://localhost:${PORT}/<cfg>/manifest.json`)
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () =>
+  console.log(`🚀  StreamBridge up at http://${HOST}:${PORT}/<cfg>/manifest.json`)
 );
