@@ -44,12 +44,12 @@ function baseManifest () {
       {
         type: "movie",
         id: "jellyfin-movies",
-        name: "Jellyfin Movies"
+        name: "Movies"
       },
       {
         type: "series",
         id: "jellyfin-series",
-        name: "Jellyfin Series"
+        name: "Series"
       }
     ],
     resources: [
@@ -110,12 +110,8 @@ app.get("/:cfg/manifest.json", (req, res) => {
   mf.name = `StreamBridge: Jellyfin to Stremio (${serverHostname})`;
   mf.behaviorHints.configurationRequired = false;
   
-  // Update catalog names to include server info
-  if (mf.catalogs && mf.catalogs.length > 0) {
-    mf.catalogs.forEach(cat => {
-      cat.name = `${cat.name} (${serverHostname})`;
-    });
-  }
+  // Keep catalog names simple - they'll show up in Stremio's catalog list
+  // Don't modify catalog names - let them appear as "Movies" and "Series" in Stremio
 
   console.log(`[MANIFEST] Returning manifest for: ${mf.name}`);
   console.log(`[MANIFEST] Stream resource configured:`, mf.resources.find(r => r.name === 'stream'));
