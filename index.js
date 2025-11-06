@@ -182,7 +182,10 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
         const behaviorHints = {};
         if (s.mediaInfo?.filename) behaviorHints.filename = s.mediaInfo.filename;
         if (s.mediaInfo?.size) behaviorHints.videoSize = s.mediaInfo.size;
-        behaviorHints.notWebReady = true; // Direct play URLs need this
+        // notWebReady: true means Stremio will use external player or direct stream
+        // This is needed for Jellyfin direct play URLs
+        behaviorHints.notWebReady = true;
+        behaviorHints.externalPlayer = false; // Let Stremio handle playback
         if (s.itemId) behaviorHints.bingeGroup = `jellyfin-${s.itemId}`; // Enables auto-play for series
         
         const stream = {
