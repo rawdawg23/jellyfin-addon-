@@ -501,11 +501,12 @@ app.get("/health", (_req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
-// LOGO route - serve logo image (avoids binary file issues in Hugging Face)
+// LOGO route - serve logo image (SVG format, no binary file issues)
 // ──────────────────────────────────────────────────────────────────────────
-app.get("/logo.png", (req, res) => {
-  const logoPath = path.join(__dirname, "public", "logo.png");
+app.get("/logo.svg", (req, res) => {
+  const logoPath = path.join(__dirname, "public", "logo.svg");
   if (fs.existsSync(logoPath)) {
+    res.setHeader('Content-Type', 'image/svg+xml');
     res.sendFile(logoPath);
   } else {
     res.status(404).json({ error: "Logo not found" });

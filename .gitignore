@@ -25,6 +25,6 @@ Thumbs.db
 dist/
 build/
 
-# Logo file (kept locally, served via endpoint)
+# Logo PNG file (kept locally, served via endpoint)
 public/logo.png
 
