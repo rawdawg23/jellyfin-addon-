@@ -17,8 +17,10 @@ RUN test -f package.json || (echo "ERROR: package.json not found!" && ls -la && 
 RUN npm install --production --omit=dev --no-audit --no-fund --progress=false || \
     (echo "npm install failed, trying with cache..." && npm cache clean --force && npm install --production --omit=dev --no-audit --no-fund)
 
-# Copy the rest of the application files
+# Copy the rest of the application files (exclude node_modules, .git, etc.)
 COPY . .
+# Explicitly copy logo if it exists (will be available in Docker build context)
+COPY public/logo.png* ./public/ || true
 
 # Expose port (Hugging Face Spaces uses PORT env var)
 EXPOSE 7860
