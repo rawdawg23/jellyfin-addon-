@@ -1508,12 +1508,13 @@ async function getCollectionItems(collectionId, itemType, config) {
     try {
         const allItems = [];
         const pageSize = 500; // Reduced from 10000 to prevent timeouts - fetch in smaller chunks
+        const maxItems = 10000; // Limit to first 10,000 items to prevent timeout (Stremio can paginate if needed)
         let startIndex = 0;
         let hasMore = true;
         
-        console.log(`[GETCOLLECTIONITEMS] Starting to fetch items from collection ${collectionId} (pageSize: ${pageSize})`);
+        console.log(`[GETCOLLECTIONITEMS] Starting to fetch items from collection ${collectionId} (pageSize: ${pageSize}, maxItems: ${maxItems})`);
         
-        while (hasMore) {
+        while (hasMore && allItems.length < maxItems) {
             const params = {
                 ParentId: collectionId,
                 Recursive: true,
@@ -1542,9 +1543,16 @@ async function getCollectionItems(collectionId, itemType, config) {
             const items = data.Items || [];
             const totalRecords = data.TotalRecordCount || 0;
             
-            console.log(`[GETCOLLECTIONITEMS] Fetched page ${Math.floor(startIndex / pageSize) + 1}: ${items.length} items (Total: ${totalRecords})`);
+            console.log(`[GETCOLLECTIONITEMS] Fetched page ${Math.floor(startIndex / pageSize) + 1}: ${items.length} items (Total in library: ${totalRecords}, fetched so far: ${allItems.length + items.length})`);
             
             allItems.push(...items);
+            
+            // Check if we've reached the max items limit
+            if (allItems.length >= maxItems) {
+                console.log(`[GETCOLLECTIONITEMS] Reached max items limit (${maxItems}), stopping pagination`);
+                hasMore = false;
+                break;
+            }
             
             // Always continue paginating until we get fewer items than page size
             // Don't rely solely on TotalRecordCount as it may be inaccurate for large libraries
@@ -1566,6 +1574,9 @@ async function getCollectionItems(collectionId, itemType, config) {
         }
         
         console.log(`[GETCOLLECTIONITEMS] Total items fetched from collection ${collectionId}: ${allItems.length}`);
+        if (allItems.length >= maxItems) {
+            console.log(`[GETCOLLECTIONITEMS] Note: Limited to first ${maxItems} items to prevent timeout. Library may have more items.`);
+        }
         return allItems;
     } catch (err) {
         console.error("❌ getCollectionItems error:", err.message);

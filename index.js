@@ -297,7 +297,7 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
       res.set('Cache-Control', 'no-cache');
       res.json({ metas: [] });
     }
-  }, 60000); // 60 second timeout for catalog requests (increased for large libraries)
+  }, 90000); // 90 second timeout for catalog requests (increased for very large libraries - 10k items = ~20 pages)
 
   let cfg;
   try {
