@@ -5,103 +5,566 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>EP-FIN • Jellyfin ↔ Stremio Setup</title>
 
-<!-- ----------  Design tokens  ---------- -->
 <style>
-:root{
-  --bg:      #11181f;
-  --panel:   #1b2530;
-  --accent:  #22c55e;           /* green-500 */
-  --accent-d:#16a34a;           /* darker hover */
-  --text:    #e6e9ef;
-  --text-dim:#9aa3b5;
-  --radius:  14px;
-  --shadow:  0 6px 24px rgba(0,0,0,.25);
-  --gap:     1.0rem;
-  font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;
-  line-height:1.4;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --accent: #22c55e;
+  --accent-d: #16a34a;
+  --text: #ffffff;
+  --text-dim: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.5);
+  --radius: 20px;
+  --radius-sm: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color-scheme: dark;
 }
-*,*:before,*:after{box-sizing:border-box}
-body{
-  margin:0;min-height:100vh;background:var(--bg);color:var(--text);
-  display:flex;align-items:center;justify-content:center;padding:2rem 1rem;
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #4facfe 75%, #00f2fe 100%);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  position: relative;
+  overflow-x: hidden;
 }
 
-h1{margin:.5rem 0 0.5rem;text-align:center;font-size:1.6rem;font-weight:600}
-h2{margin:2rem 0 .75rem;font-size:1.15rem;font-weight:600;color:var(--text-dim)}
-small{font-size:.8rem;color:var(--text-dim)}
-a{color:var(--accent);text-decoration:none}
-a:hover{text-decoration:underline}
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
 
-.panel{
-  background:var(--panel);padding:2rem;border-radius:var(--radius);
-  width:100%;max-width:600px;box-shadow:var(--shadow);
+/* Animated background particles */
+body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+  animation: particleFloat 20s ease-in-out infinite;
+  pointer-events: none;
 }
-form{display:grid;gap:var(--gap)}
-label{font-size:.9rem;margin-bottom:.25rem}
-input{
-  width:100%;padding:.65rem .8rem;border-radius:8px;border:1px solid #334155;
-  background:#0f1722;color:var(--text);font-size:.95rem;
-}
-input:focus{outline:2px solid var(--accent);outline-offset:0}
 
-button{
-  display:inline-flex;align-items:center;justify-content:center;
-  gap:.45rem;padding:.75rem 1rem;font-weight:600;font-size:.96rem;
-  border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;
-  transition:.18s transform,.18s background;
+@keyframes particleFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -30px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
 }
-button:hover{background:var(--accent-d);transform:translateY(-1px)}
-button:disabled{opacity:.45;cursor:default;transform:none}
 
-pre{
-  background:#0f1722;border:1px solid #283141;color:#e2e8f0;
-  padding:.9rem;border-radius:8px;white-space:pre-wrap;word-break:break-all;
-  margin:0;
+.container {
+  width: 100%;
+  max-width: 650px;
+  position: relative;
+  z-index: 1;
 }
-.out{margin-top:1rem;animation:fade .35s ease}
-@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
-.toast{
-  position:fixed;bottom:1.1rem;left:50%;transform:translateX(-50%);
-  background:#272e38;padding:.7rem 1.4rem;border-radius:8px;
-  box-shadow:var(--shadow);font-size:.9rem;opacity:0;pointer-events:none;
-  transition:opacity .25s ease;
+
+/* Logo Section */
+.logo-container {
+  text-align: center;
+  margin-bottom: 2rem;
+  animation: fadeInDown 0.6s ease-out;
 }
-.toast.show{opacity:1}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.logo {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 1rem;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.logo::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transform: rotate(45deg);
+  animation: shine 3s infinite;
+}
+
+@keyframes shine {
+  0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+  100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+}
+
+.logo img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  position: relative;
+  z-index: 1;
+}
+
+.logo-text {
+  position: relative;
+  z-index: 1;
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #ffffff 0%, rgba(255, 255, 255, 0.8) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.app-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.app-subtitle {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+/* Glass Panel */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius);
+  padding: 2.5rem;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  animation: fadeInUp 0.6s ease-out 0.2s both;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+h1 {
+  text-align: center;
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.help-text {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-bottom: 2rem;
+}
+
+.help-text a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.help-text a:hover {
+  color: var(--accent-d);
+  text-decoration: underline;
+}
+
+/* Warning Box */
+.warning-box {
+  background: rgba(251, 191, 36, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  margin-bottom: 2rem;
+  animation: slideIn 0.4s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.warning-box-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.warning-icon {
+  font-size: 1.3rem;
+}
+
+.warning-title {
+  font-weight: 600;
+  color: #fbbf24;
+  font-size: 1rem;
+}
+
+.warning-text {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.warning-text strong {
+  color: var(--text);
+}
+
+/* Section Headers */
+h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 2rem 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+h2:first-of-type {
+  margin-top: 0;
+}
+
+/* Forms */
+form {
+  display: grid;
+  gap: 1.25rem;
+}
+
+label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+/* Glass Input Fields */
+input {
+  width: 100%;
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text);
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+input::placeholder {
+  color: var(--text-muted);
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 
+    0 0 0 3px rgba(34, 197, 94, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+input:hover:not(:focus) {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Glass Buttons */
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  font-weight: 600;
+  font-size: 1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-d) 100%);
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+button:hover::before {
+  left: 100%;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.copy-btn {
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+/* Output Sections */
+.out {
+  margin-top: 1.5rem;
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+pre {
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+}
+
+small {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  display: block;
+  margin-top: 0.5rem;
+  line-height: 1.5;
+}
+
+small strong {
+  color: var(--text);
+}
+
+/* Links */
+a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+a:hover {
+  color: var(--accent-d);
+  text-decoration: underline;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 1rem 1.5rem;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  font-size: 0.9rem;
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Install Link Output */
+#cfgOut {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  padding: 1.5rem;
+  margin-top: 1rem;
+}
+
+#cfgOut p {
+  margin-bottom: 1rem;
+}
+
+#cfgOut a {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-d) 100%);
+  color: white;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.3s;
+  box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+}
+
+#cfgOut a:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+}
+
+/* Kofi Widget */
 iframe.floatingchat-container,
 iframe[id*="kofi-wo-container"] {
-  width: 180px !important;      /* Match button's max width */
-  height: 46px !important;      /* Match button's height */
-  border-radius: 100px !important; /* Make pill-shaped like button */
+  width: 180px !important;
+  height: 46px !important;
+  border-radius: 100px !important;
   overflow: hidden;
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
 }
+
+/* Responsive */
+@media (max-width: 640px) {
+  .glass-panel {
+    padding: 1.5rem;
+  }
+  
+  .app-title {
+    font-size: 1.5rem;
+  }
+  
+  .logo {
+    width: 100px;
+    height: 100px;
+  }
+  
+  h1 {
+    font-size: 1.5rem;
+  }
+}
 </style>
 </head>
 <body>
 
-<div class="panel">
-  <h1>EP-FIN Setup</h1>
-  <p style="text-align:center;margin-top:0.5rem;font-size:.8rem;color:var(--text-dim)">
+<div class="container">
+  <!-- Logo Section -->
+  <div class="logo-container">
+    <div class="logo">
+      <!-- Replace with your logo image: <img src="/logo.png" alt="EP-FIN Logo"> -->
+      <div class="logo-text">EP-FIN</div>
+    </div>
+    <h1 class="app-title">EP-FIN Setup</h1>
+    <p class="app-subtitle">Connect your Jellyfin server to Stremio</p>
+  </div>
+
+  <div class="glass-panel">
+    <p class="help-text">
     Need help? See <a href="https://github.com/h4harsimran/streambridge" target="_blank">docs on GitHub</a>.
   </p>
   
   <!-- HTTPS Warning -->
-  <div style="background:#1e293b;border:1px solid #475569;border-radius:8px;padding:1rem;margin-bottom:1.5rem;">
-    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
-      <span style="color:#fbbf24;font-size:1.2rem;">⚠️</span>
-      <strong style="color:#fbbf24;">Important: HTTPS Required</strong>
+    <div class="warning-box">
+      <div class="warning-box-header">
+        <span class="warning-icon">⚠️</span>
+        <strong class="warning-title">Important: HTTPS Required</strong>
     </div>
-    <p style="margin:0;font-size:0.9rem;color:var(--text-dim);line-height:1.4;">
+      <p class="warning-text">
       This addon only works with Jellyfin servers accessible via <strong>HTTPS</strong>. 
       HTTP and localhost addresses are not supported. Make sure your Jellyfin server is accessible 
       through a secure HTTPS connection.
     </p>
   </div>
 
-  <!--  1· Helper  -->
+    <!-- 1 · Helper -->
   <h2>1 · Fetch User ID & Token</h2>
   <form id="helper">
     <label>Jellyfin Server URL</label>
@@ -114,36 +577,39 @@ iframe[id*="kofi-wo-container"] {
   </form>
 
   <div id="helperOut" class="out" style="display:none">
-    <small>User ID</small><pre id="uid"></pre>
+      <small>User ID</small>
+      <pre id="uid"></pre>
   </div>
 
-  <!--  2· Configure  -->
+    <!-- 2 · Configure -->
   <h2>2 · Generate Install Link</h2>
   <form id="cfg">
     <label>Jellyfin Server URL</label>
-    <input name="serverUrl" placeholder="https://your-server.com:443" required>
-    <label>API Key</label>
-    <input name="accessToken" type="text" placeholder="Enter your API key (User ID will be auto-detected)" required>
-    <small style="color:var(--text-dim);font-size:0.85rem;margin-top:0.25rem;display:block;">
-      💡 <strong>Simplified Setup:</strong> Only Server URL and API Key needed! User ID is automatically detected.<br>
-      💡 <strong>Get API Key:</strong> Jellyfin Dashboard → Settings → API Keys → Create API Key<br>
-      💡 <strong>Or use Step 1:</strong> Enter username/password to auto-get API key
-    </small>
+      <input name="serverUrl" placeholder="https://your-server.com:443" required>
+      <label>API Key</label>
+      <input name="accessToken" type="text" placeholder="Enter your API key (User ID will be auto-detected)" required>
+      <small>
+        💡 <strong>Simplified Setup:</strong> Only Server URL and API Key needed! User ID is automatically detected.<br>
+        💡 <strong>Get API Key:</strong> Jellyfin Dashboard → Settings → API Keys → Create API Key<br>
+        💡 <strong>Or use Step 1:</strong> Enter username/password to auto-get API key
+      </small>
     <button id="cfgBtn">Create & Install Addon</button>
   </form>
 
   <div id="cfgOut" class="out"></div>
-
+  </div>
 </div>
 
-<!-- ---------- Toast ---------- -->
+<!-- Toast -->
 <div id="toast" class="toast">Copied!</div>
 
-<!-- ----------  Scripts  ---------- -->
+<!-- Scripts -->
 <script>
 const $ = sel=>document.querySelector(sel);
 const toast = msg =>{
-  const t=$("#toast");t.textContent=msg;t.classList.add("show");
+  const t=$("#toast");
+  t.textContent=msg;
+  t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"),2200);
 };
 
@@ -155,12 +621,13 @@ $("#helper").addEventListener("submit", async e=>{
         user=f.get("user"),
         pass=f.get("pass");
   const btn=$("#helperBtn");
-  btn.disabled=true;btn.textContent="Fetching…";
+  btn.disabled=true;
+  btn.textContent="Fetching…";
 
-  // Ensure HTTPS
   if(!url.startsWith("https://")) {
     alert("❌ Please use HTTPS URLs only. Your Jellyfin server must be accessible via HTTPS for this addon to work.");
-    btn.disabled=false;btn.textContent="Get Access Info";
+    btn.disabled=false;
+    btn.textContent="Get Access Info";
     return;
   }
 
@@ -180,15 +647,14 @@ $("#helper").addEventListener("submit", async e=>{
     $("#uid").textContent = data?.User?.Id || "";
     $("#helperOut").style.display="block";
 
-    /* autofill config form only if fields are empty */
     const cf=$("#cfg");
     if (!cf.serverUrl.value) cf.serverUrl.value = url;
-    // User ID no longer needed - will be auto-detected from API key
     if (!cf.accessToken.value) cf.accessToken.value = data?.AccessToken||"";
   }catch(err){
     alert("❌ "+err.message);
   }finally{
-    btn.disabled=false;btn.textContent="Get Access Info";
+    btn.disabled=false;
+    btn.textContent="Get Access Info";
   }
 });
 
@@ -198,7 +664,6 @@ $("#cfg").addEventListener("submit",e=>{
   const cfg=Object.fromEntries(new FormData(e.target).entries());
   const serverUrl = cfg.serverUrl;
 
-  // Ensure HTTPS in config form
   if(!serverUrl.startsWith("https://")) {
     alert("❌ Please use HTTPS URLs only. Your Jellyfin server must be accessible via HTTPS for this addon to work.");
     return;
@@ -207,20 +672,16 @@ $("#cfg").addEventListener("submit",e=>{
   const cfg64=btoa(unescape(encodeURIComponent(JSON.stringify(cfg))))
                 .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 
-  // Build the full addon URL with explicit protocol and port
   const protocol = location.protocol;
-  const host = location.host; // This includes port for localhost:7000
+  const host = location.host;
   const httpURL = `${protocol}//${host}/${cfg64}/manifest.json`;
   
-  // For localhost, use 127.0.0.1 instead to avoid Stremio protocol handler issues
-  // Stremio's stremio:// handler may convert localhost to https:// and drop the port
   const hostForStremio = host.includes('localhost') ? host.replace('localhost', '127.0.0.1') : host;
   const stremioURL = `stremio://${hostForStremio}/${cfg64}/manifest.json`;
   
-  // Also provide HTTP URL explicitly for localhost (since stremio:// might not work)
   const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
   const localhostWarning = isLocalhost ? 
-    `<div style="background:#1e293b;border:1px solid #475569;border-radius:8px;padding:1rem;margin-top:1rem;">
+    `<div class="warning-box" style="margin-top:1rem;">
       <strong style="color:#fbbf24;">⚠️ Localhost Note:</strong>
       <p style="margin:0.5rem 0 0;font-size:0.9rem;color:var(--text-dim);">
         For local development, Stremio may have issues with the stremio:// link. 
