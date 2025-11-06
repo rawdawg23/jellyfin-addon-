@@ -309,6 +309,14 @@ async function makeJellyfinApiRequest(url, params = {}, config, timeoutMs = 5000
             params: params,
             timeout: timeoutMs, // Configurable timeout per request
         });
+        
+        // Log the actual request URL for debugging (especially for search requests)
+        if (params.ImdbId || params.TmdbId || params.AnyProviderIdEquals) {
+            const queryString = new URLSearchParams(params).toString();
+            const fullUrl = `${normalizedUrl}?${queryString}`;
+            console.log(`[API] Full request URL: ${fullUrl.substring(0, 200)}${fullUrl.length > 200 ? '...' : ''}`);
+        }
+        
         const responseData = response.data;
         
         // Log response summary for search requests
