@@ -19,8 +19,7 @@ RUN npm install --production --omit=dev --no-audit --no-fund --progress=false ||
 
 # Copy the rest of the application files (exclude node_modules, .git, etc.)
 COPY . .
-# Explicitly copy logo if it exists (will be available in Docker build context)
-COPY public/logo.png* ./public/ || true
+# SVG logo is included in COPY . . above (text-based, no binary issues)
 
 # Expose port (Hugging Face Spaces uses PORT env var)
 EXPOSE 7860
