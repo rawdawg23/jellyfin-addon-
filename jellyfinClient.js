@@ -447,7 +447,9 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             anyProviderIdFormats.push(`anidb.${anidbId}`, `AniDb.${anidbId}`);
         }
 
-        for (const attemptFormat of anyProviderIdFormats) {
+        // Only try first 2 formats to avoid long delays (Jellyfin seems broken anyway)
+        const formatsToTry = anyProviderIdFormats.slice(0, 2);
+        for (const attemptFormat of formatsToTry) {
             console.log(`[FIND] Strategy 2: Trying AnyProviderIdEquals=${attemptFormat}`);
             const altParams = { ...baseMovieParams, AnyProviderIdEquals: attemptFormat };
             delete altParams.ImdbId; // Remove specific ID params when using AnyProviderIdEquals
@@ -457,7 +459,7 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             delete altParams.UserId; // /Users/{userId}/Items doesn't need UserId in params
             
             try {
-                const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 30000);
+                const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000); // Reduced timeout
                 console.log(`[FIND] Strategy 2 (${attemptFormat}): Received ${data?.Items?.length || 0} items from API`);
                 if (data?.Items?.length > 0) {
                     // Debug: Show ProviderIds of first few items
