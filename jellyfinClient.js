@@ -366,11 +366,20 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config);
             if (data?.Items?.length > 0) {
                 console.log(`[FIND] Strategy 2: Found ${data.Items.length} items with AnyProviderIdEquals=${attemptFormat}, filtering...`);
-                const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                const matches = data.Items.filter(i => {
+                    const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                    if (!matches && data.Items.length <= 5) {
+                        // Log ProviderIds for first few items if no matches
+                        console.log(`[FIND] Strategy 2: Item "${i.Name}" has ProviderIds:`, JSON.stringify(i.ProviderIds));
+                    }
+                    return matches;
+                });
                 if (matches.length > 0) {
                     console.log(`[FIND] Strategy 2: Found ${matches.length} matching movie(s) with AnyProviderIdEquals=${attemptFormat}`);
                     foundItems.push(...matches);
                     break; // Stop trying other formats once we find a match
+                } else {
+                    console.log(`[FIND] Strategy 2: No items matched ProviderId filter for ${attemptFormat}`);
                 }
             }
         }
@@ -378,34 +387,52 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
 
     // --- Strategy 3: Manual Filter Search (if previous strategies failed) ---
     // This searches without ID filter and manually filters by ProviderIds
-    // Only use if library is reasonably sized (Limit: 100)
+    // Search with a larger limit and paginate if needed
     if (foundItems.length === 0) {
-        console.log(`[FIND] Strategy 3: Trying manual filter search (fetching up to 100 movies)...`);
+        console.log(`[FIND] Strategy 3: Trying manual filter search (fetching movies to find match)...`);
         const manualParams = {
             ...baseMovieParams,
-            Limit: 100, // Reasonable limit for manual filtering
+            Limit: 1000, // Increased limit for better chance of finding match
             Fields: "ProviderIds,Name,MediaSources,Path,Id"
         };
         delete manualParams.ImdbId;
         delete manualParams.TmdbId;
         delete manualParams.TvdbId;
         delete manualParams.AniDbId;
+        delete manualParams.UserId; // Remove UserId from params for /Users/{userId}/Items
 
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, manualParams, config);
-        if (data?.Items?.length > 0) {
-            console.log(`[FIND] Strategy 3: Fetched ${data.Items.length} movies, filtering by ProviderIds...`);
-            const matches = data.Items.filter(i => {
-                const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
-                if (matches) {
-                    console.log(`[FIND] Strategy 3: Found match: "${i.Name}" with ProviderIds:`, JSON.stringify(i.ProviderIds));
+        let strategy3StartIndex = 0;
+        let strategy3HasMore = true;
+        const strategy3PageSize = 1000;
+        
+        while (strategy3HasMore && foundItems.length === 0) {
+            manualParams.StartIndex = strategy3StartIndex;
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, manualParams, config);
+            if (data?.Items?.length > 0) {
+                console.log(`[FIND] Strategy 3: Fetched ${data.Items.length} movies (page ${Math.floor(strategy3StartIndex / strategy3PageSize) + 1}), filtering by ProviderIds...`);
+                const matches = data.Items.filter(i => {
+                    const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                    if (matches) {
+                        console.log(`[FIND] Strategy 3: Found match: "${i.Name}" with ProviderIds:`, JSON.stringify(i.ProviderIds));
+                    }
+                    return matches;
+                });
+                if (matches.length > 0) {
+                    console.log(`[FIND] Strategy 3: Found ${matches.length} matching movie(s) via manual filter`);
+                    foundItems.push(...matches);
+                    strategy3HasMore = false; // Stop searching once we find a match
+                } else {
+                    // Continue to next page if no match found
+                    if (data.Items.length < strategy3PageSize) {
+                        strategy3HasMore = false; // No more items
+                        console.log(`[FIND] Strategy 3: No matches found in ${data.Items.length} movies checked`);
+                    } else {
+                        strategy3StartIndex += strategy3PageSize;
+                        console.log(`[FIND] Strategy 3: No match in this page, continuing to next page...`);
+                    }
                 }
-                return matches;
-            });
-            if (matches.length > 0) {
-                console.log(`[FIND] Strategy 3: Found ${matches.length} matching movie(s) via manual filter`);
-                foundItems.push(...matches);
             } else {
-                console.log(`[FIND] Strategy 3: No matches found in first 100 movies`);
+                strategy3HasMore = false;
             }
         }
     }
