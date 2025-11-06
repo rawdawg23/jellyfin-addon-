@@ -844,7 +844,7 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
     
     if (searchedIdField) {
         try {
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 10000);
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 5000); // Reduced timeout to 5s for faster response
             if (data?.Items?.length > 0) {
                 // CRITICAL: Jellyfin's API ignores search params and returns random items
                 // We MUST filter by ProviderIds to get actual matches
@@ -900,13 +900,13 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
             }
         }
         
-        // Try TMDb formats
+        // Try TMDb formats (limit to 1 format for speed)
         if (foundItems.length === 0 && tmdbId) {
-            const formats = [`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`, `TMDB.${tmdbId}`];
+            const formats = [`tmdb.${tmdbId}`]; // Only try most common format
             for (const format of formats) {
                 try {
                     altParams.AnyProviderIdEquals = format;
-                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 5000); // Reduced timeout to 5s
                     if (data?.Items?.length > 0) {
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                         if (matches.length > 0) {
@@ -923,13 +923,13 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
             }
         }
         
-        // Try TVDB formats
+        // Try TVDB formats (limit to 1 format for speed)
         if (foundItems.length === 0 && tvdbId) {
-            const formats = [`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`, `TVDB.${tvdbId}`];
+            const formats = [`tvdb.${tvdbId}`]; // Only try most common format
             for (const format of formats) {
                 try {
                     altParams.AnyProviderIdEquals = format;
-                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 5000); // Reduced timeout to 5s
                     if (data?.Items?.length > 0) {
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                         if (matches.length > 0) {
@@ -1105,7 +1105,7 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
     
     if (searchedIdField) {
         try {
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 10000);
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 5000); // Reduced timeout to 5s for faster response
             if (data?.Items?.length > 0) {
                 // CRITICAL: Jellyfin's API ignores search params and returns random items
                 // We MUST filter by ProviderIds to get actual matches
@@ -1137,13 +1137,13 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
         delete altParams.TvdbId;
         delete altParams.AniDbId;
         
-        // Try IMDb formats first
+        // Try IMDb formats first (limit to 2 most likely formats for speed)
         if (imdbId) {
-            const formats = [`imdb.${imdbId}`, `Imdb.${imdbId}`, `imdb.${imdbId.replace('tt', '')}`, `Imdb.${imdbId.replace('tt', '')}`];
-            for (const format of formats) { // Try all formats for better matching
+            const formats = [`imdb.${imdbId}`, `Imdb.${imdbId}`]; // Only try first 2 formats to avoid timeout
+            for (const format of formats) {
                 try {
                     altParams.AnyProviderIdEquals = format;
-                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 5000); // Reduced timeout to 5s
                     if (data?.Items?.length > 0) {
                         // CRITICAL: Filter by ProviderIds - Jellyfin's API is unreliable
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
@@ -1161,13 +1161,13 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
             }
         }
         
-        // Try TVDB formats (important for TV shows)
+        // Try TVDB formats (important for TV shows, limit to 1 format for speed)
         if (foundItems.length === 0 && tvdbId) {
-            const formats = [`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`, `TVDB.${tvdbId}`];
-            for (const format of formats) { // Try all formats for better matching
+            const formats = [`tvdb.${tvdbId}`]; // Only try most common format
+            for (const format of formats) {
                 try {
                     altParams.AnyProviderIdEquals = format;
-                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 5000); // Reduced timeout to 5s
                     if (data?.Items?.length > 0) {
                         // CRITICAL: Filter by ProviderIds - Jellyfin's API is unreliable
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
@@ -1185,13 +1185,13 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
             }
         }
         
-        // Try TMDb formats
+        // Try TMDb formats (limit to 1 format for speed)
         if (foundItems.length === 0 && tmdbId) {
-            const formats = [`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`, `TMDB.${tmdbId}`];
-            for (const format of formats) { // Try all formats for better matching
+            const formats = [`tmdb.${tmdbId}`]; // Only try most common format
+            for (const format of formats) {
                 try {
                     altParams.AnyProviderIdEquals = format;
-                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 5000); // Reduced timeout to 5s
                     if (data?.Items?.length > 0) {
                         // CRITICAL: Filter by ProviderIds - Jellyfin's API is unreliable
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
