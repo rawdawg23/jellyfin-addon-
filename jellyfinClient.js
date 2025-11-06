@@ -316,20 +316,25 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
 
     // --- Strategy 2: AnyProviderIdEquals Lookup (/Users/{UserId}/Items) ---
     if (foundItems.length === 0) {
+        console.log(`[FIND] Strategy 2: Trying AnyProviderIdEquals lookup...`);
         const anyProviderIdFormats = [];
         if (imdbId) {
             const numericImdbId = imdbId.replace('tt', '');
-            anyProviderIdFormats.push(`imdb.${imdbId}`, `Imdb.${imdbId}`);
-            if (numericImdbId !== imdbId) anyProviderIdFormats.push(`imdb.${numericImdbId}`, `Imdb.${numericImdbId}`);
+            // Try various formats that Jellyfin might use
+            anyProviderIdFormats.push(`imdb.${imdbId}`, `Imdb.${imdbId}`, `IMDB.${imdbId}`);
+            if (numericImdbId !== imdbId) {
+                anyProviderIdFormats.push(`imdb.${numericImdbId}`, `Imdb.${numericImdbId}`, `IMDB.${numericImdbId}`);
+            }
         } else if (tmdbId) {
-            anyProviderIdFormats.push(`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`);
+            anyProviderIdFormats.push(`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`, `TMDB.${tmdbId}`);
         } else if (tvdbId) {
-            anyProviderIdFormats.push(`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`);
+            anyProviderIdFormats.push(`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`, `TVDB.${tvdbId}`);
         } else if (anidbId) {
-            anyProviderIdFormats.push(`anidb.${anidbId}`, `AniDb.${anidbId}`);
+            anyProviderIdFormats.push(`anidb.${anidbId}`, `AniDb.${anidbId}`, `ANIDB.${anidbId}`);
         }
 
         for (const attemptFormat of anyProviderIdFormats) {
+            console.log(`[FIND] Strategy 2: Trying AnyProviderIdEquals=${attemptFormat}`);
             const altParams = { ...baseMovieParams, AnyProviderIdEquals: attemptFormat };
             delete altParams.ImdbId; // Remove specific ID params when using AnyProviderIdEquals
             delete altParams.TmdbId;
@@ -339,11 +344,47 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
 
             const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config);
             if (data?.Items?.length > 0) {
+                console.log(`[FIND] Strategy 2: Found ${data.Items.length} items with AnyProviderIdEquals=${attemptFormat}, filtering...`);
                 const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                 if (matches.length > 0) {
-                    //console.log(`🔍 Found movie via /Users/{UserId}/Items with AnyProviderIdEquals=${attemptFormat}`);
+                if (matches.length > 0) {
+                    console.log(`[FIND] Strategy 2: Found ${matches.length} matching movie(s) with AnyProviderIdEquals=${attemptFormat}`);
                     foundItems.push(...matches);
+                    break; // Stop trying other formats once we find a match
                 }
+            }
+        }
+    }
+
+    // --- Strategy 3: Manual Filter Search (if previous strategies failed) ---
+    // This searches without ID filter and manually filters by ProviderIds
+    // Only use if library is reasonably sized (Limit: 100)
+    if (foundItems.length === 0) {
+        console.log(`[FIND] Strategy 3: Trying manual filter search (fetching up to 100 movies)...`);
+        const manualParams = {
+            ...baseMovieParams,
+            Limit: 100, // Reasonable limit for manual filtering
+            Fields: "ProviderIds,Name,MediaSources,Path,Id"
+        };
+        delete manualParams.ImdbId;
+        delete manualParams.TmdbId;
+        delete manualParams.TvdbId;
+        delete manualParams.AniDbId;
+
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, manualParams, config);
+        if (data?.Items?.length > 0) {
+            console.log(`[FIND] Strategy 3: Fetched ${data.Items.length} movies, filtering by ProviderIds...`);
+            const matches = data.Items.filter(i => {
+                const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                if (matches) {
+                    console.log(`[FIND] Strategy 3: Found match: "${i.Name}" with ProviderIds:`, JSON.stringify(i.ProviderIds));
+                }
+                return matches;
+            });
+            if (matches.length > 0) {
+                console.log(`[FIND] Strategy 3: Found ${matches.length} matching movie(s) via manual filter`);
+                foundItems.push(...matches);
+            } else {
+                console.log(`[FIND] Strategy 3: No matches found in first 100 movies`);
             }
         }
     }
