@@ -82,6 +82,7 @@ function decodeCfg(str) {
 // ──────────────────────────────────────────────────────────────────────────
 app.get("/:cfg/manifest.json", (req, res) => {
   const cfgString = req.params.cfg;
+  console.log(`[MANIFEST] Request received - cfg length: ${cfgString.length}`);
   let cfg;
   try {
     cfg = decodeCfg(cfgString);    
@@ -147,7 +148,10 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
   }
 
   const { type, id } = req.params;
-  console.log(`[STREAM] Request for ${type}/${id}`);
+  console.log(`[STREAM] ==========================================`);
+  console.log(`[STREAM] Request received from Stremio!`);
+  console.log(`[STREAM] Type: ${type}, ID: ${id}`);
+  console.log(`[STREAM] ==========================================`);
   
   if (!cfg.serverUrl || !cfg.accessToken) {
     console.error("[STREAM] Missing configuration (need serverUrl and accessToken)");
