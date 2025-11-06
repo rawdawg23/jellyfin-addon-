@@ -814,7 +814,9 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             }
         }
         
-        console.log(`[FIND] ❌ Not found in cache, trying direct API search...`);
+        console.log(`[FIND] ❌ Not found in cache (${movieCache.items.length} movies indexed), trying direct API search...`);
+    } else {
+        console.log(`[FIND] Cache is empty (${movieCache.items.length} movies), will try direct API search...`);
     }
     
     // FALLBACK: Direct API search (like original Emby StreamBridge) - FAST, doesn't load all movies
@@ -865,11 +867,14 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
                     altParams.AnyProviderIdEquals = format;
                     const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
                     if (data?.Items?.length > 0) {
+                        // CRITICAL: Filter by ProviderIds - Jellyfin's API is unreliable
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                         if (matches.length > 0) {
-                            console.log(`[FIND] ✅ Found via AnyProviderIdEquals=${format}`);
+                            console.log(`[FIND] ✅ Found ${matches.length} match(es) via AnyProviderIdEquals=${format} (filtered from ${data.Items.length} items)`);
                             foundItems.push(...matches);
                             break;
+                        } else {
+                            console.log(`[FIND] ⚠️ AnyProviderIdEquals=${format} returned ${data.Items.length} items but NONE matched`);
                         }
                     }
                 } catch (err) {
@@ -1030,11 +1035,14 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
                     altParams.AnyProviderIdEquals = format;
                     const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
                     if (data?.Items?.length > 0) {
+                        // CRITICAL: Filter by ProviderIds - Jellyfin's API is unreliable
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                         if (matches.length > 0) {
-                            console.log(`[FIND] ✅ Found via AnyProviderIdEquals=${format}`);
+                            console.log(`[FIND] ✅ Found ${matches.length} match(es) via AnyProviderIdEquals=${format} (filtered from ${data.Items.length} items)`);
                             foundItems.push(...matches);
                             break;
+                        } else {
+                            console.log(`[FIND] ⚠️ AnyProviderIdEquals=${format} returned ${data.Items.length} items but NONE matched`);
                         }
                     }
                 } catch (err) {
@@ -1051,11 +1059,14 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
                     altParams.AnyProviderIdEquals = format;
                     const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
                     if (data?.Items?.length > 0) {
+                        // CRITICAL: Filter by ProviderIds - Jellyfin's API is unreliable
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                         if (matches.length > 0) {
-                            console.log(`[FIND] ✅ Found via AnyProviderIdEquals=${format}`);
+                            console.log(`[FIND] ✅ Found ${matches.length} match(es) via AnyProviderIdEquals=${format} (filtered from ${data.Items.length} items)`);
                             foundItems.push(...matches);
                             break;
+                        } else {
+                            console.log(`[FIND] ⚠️ AnyProviderIdEquals=${format} returned ${data.Items.length} items but NONE matched`);
                         }
                     }
                 } catch (err) {
@@ -1072,11 +1083,14 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
                     altParams.AnyProviderIdEquals = format;
                     const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
                     if (data?.Items?.length > 0) {
+                        // CRITICAL: Filter by ProviderIds - Jellyfin's API is unreliable
                         const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                         if (matches.length > 0) {
-                            console.log(`[FIND] ✅ Found via AnyProviderIdEquals=${format}`);
+                            console.log(`[FIND] ✅ Found ${matches.length} match(es) via AnyProviderIdEquals=${format} (filtered from ${data.Items.length} items)`);
                             foundItems.push(...matches);
                             break;
+                        } else {
+                            console.log(`[FIND] ⚠️ AnyProviderIdEquals=${format} returned ${data.Items.length} items but NONE matched`);
                         }
                     }
                 } catch (err) {
