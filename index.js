@@ -328,8 +328,8 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
       console.error(`[CATALOG] You may need to refresh metadata in Jellyfin.`);
     }
     
-    // Cache catalog for 5 minutes to allow auto-updates when media is added to Jellyfin
-    res.set('Cache-Control', 'public, max-age=300');
+    // Cache catalog for 30 seconds for near-instant updates when media is added to Jellyfin
+    res.set('Cache-Control', 'public, max-age=30');
     clearTimeout(timeout);
     res.json({ metas });
   } catch (e) {
