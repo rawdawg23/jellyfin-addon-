@@ -1285,6 +1285,133 @@ async function getMovies(config) {
 }
 
 /**
+ * Gets all Collections (libraries) from Jellyfin.
+ * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
+ * @returns {Promise<Array<object>|null>} An array of Jellyfin collection items or null if unsuccessful.
+ */
+async function getCollections(config) {
+    if (!config.serverUrl || !config.accessToken) {
+        console.error("❌ Configuration missing for getCollections");
+        return [];
+    }
+    
+    // Auto-fetch User ID if not provided
+    let userId = config.userId;
+    if (!userId) {
+        const user = await getCurrentUser(config);
+        if (!user || !user.Id) {
+            console.error("❌ Could not determine User ID from API key");
+            return [];
+        }
+        userId = user.Id;
+    }
+    
+    try {
+        // Fetch Collections (libraries) from Jellyfin
+        const params = {
+            IncludeItemTypes: "CollectionFolder",
+            Recursive: false,
+            Fields: "Id,Name,Type",
+            UserId: userId
+        };
+        
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
+        
+        if (!data || !data.Items) {
+            console.error("❌ getCollections: No data returned from Jellyfin API");
+            return [];
+        }
+        
+        const collections = data.Items.filter(item => item.Type === "CollectionFolder");
+        console.log(`[GETCOLLECTIONS] Found ${collections.length} collections from Jellyfin`);
+        return collections;
+    } catch (err) {
+        console.error("❌ getCollections error:", err.message);
+        return [];
+    }
+}
+
+/**
+ * Gets items from a specific Collection by Collection ID.
+ * @param {string} collectionId - The Jellyfin Collection ID.
+ * @param {string} itemType - The item type to filter (Movie, Series, or null for all).
+ * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
+ * @returns {Promise<Array<object>|null>} An array of Jellyfin items or null if unsuccessful.
+ */
+async function getCollectionItems(collectionId, itemType, config) {
+    if (!config.serverUrl || !config.accessToken || !collectionId) {
+        console.error("❌ Configuration missing for getCollectionItems");
+        return [];
+    }
+    
+    // Auto-fetch User ID if not provided
+    let userId = config.userId;
+    if (!userId) {
+        const user = await getCurrentUser(config);
+        if (!user || !user.Id) {
+            console.error("❌ Could not determine User ID from API key");
+            return [];
+        }
+        userId = user.Id;
+    }
+    
+    try {
+        const allItems = [];
+        const pageSize = 10000;
+        let startIndex = 0;
+        let hasMore = true;
+        
+        while (hasMore) {
+            const params = {
+                ParentId: collectionId,
+                Recursive: true,
+                Fields: DEFAULT_FIELDS,
+                Limit: pageSize,
+                StartIndex: startIndex,
+                Filters: "IsNotFolder",
+                UserId: userId
+            };
+            
+            if (itemType) {
+                params.IncludeItemTypes = itemType;
+            }
+            
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
+            
+            if (!data || !data.Items) {
+                console.error("❌ getCollectionItems: No data returned from Jellyfin API");
+                break;
+            }
+            
+            const items = data.Items || [];
+            const totalRecords = data.TotalRecordCount || 0;
+            
+            console.log(`[GETCOLLECTIONITEMS] Fetched page ${Math.floor(startIndex / pageSize) + 1}: ${items.length} items (Total: ${totalRecords})`);
+            
+            allItems.push(...items);
+            
+            if (totalRecords > 0) {
+                if (allItems.length >= totalRecords) {
+                    hasMore = false;
+                } else {
+                    startIndex += pageSize;
+                }
+            } else if (items.length < pageSize) {
+                hasMore = false;
+            } else {
+                startIndex += pageSize;
+            }
+        }
+        
+        console.log(`[GETCOLLECTIONITEMS] Total items fetched from collection ${collectionId}: ${allItems.length}`);
+        return allItems;
+    } catch (err) {
+        console.error("❌ getCollectionItems error:", err.message);
+        return [];
+    }
+}
+
+/**
  * Gets all series from Jellyfin library for catalog.
  * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
  * @returns {Promise<Array<object>|null>} An array of Jellyfin series items or null if unsuccessful.

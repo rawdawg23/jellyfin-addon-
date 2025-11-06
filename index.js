@@ -40,18 +40,7 @@ function baseManifest () {
     name    : "StreamBridge: Jellyfin to Stremio",
     description:
       "Stream media from your personal or shared Jellyfin server using IMDb/TMDB IDs.",
-    catalogs : [
-      {
-        type: "movie",
-        id: "jellyfin-movies",
-        name: "Movies"
-      },
-      {
-        type: "series",
-        id: "jellyfin-series",
-        name: "Series"
-      }
-    ],
+    catalogs : [], // Will be populated dynamically based on Jellyfin collections
     resources: [
       { name: "catalog",
         types: ["movie", "series"],
