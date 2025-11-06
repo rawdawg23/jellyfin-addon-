@@ -36,7 +36,7 @@ app.use(express.static(path.join(__dirname, "public")));
 function baseManifest () {
   return {
     id      : "org.streambridge.jellyfinresolver",
-    version : "1.1.2",
+    version : "1.2.0",
     name    : "StreamBridge: Jellyfin to Stremio",
     description:
       "Stream media from your personal or shared Jellyfin server using IMDb/TMDB IDs.",
