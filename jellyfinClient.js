@@ -191,7 +191,7 @@ function addMoviesToCache(movies) {
 }
 
 /**
- * Loads movies into cache (fetches from Jellyfin if needed, but limits to prevent timeout)
+ * Loads ALL movies into cache using pagination
  */
 async function loadMovieCache(config, forceRefresh = false) {
   const configHash = getConfigHash(config);
@@ -206,32 +206,74 @@ async function loadMovieCache(config, forceRefresh = false) {
     }
   }
   
-  // If cache is empty or very small, try to load a sample (not all movies - too slow!)
-  if (movieCache.items.length === 0 || movieCache.items.length < 1000) {
-    console.log(`[CACHE] Cache is empty/small (${movieCache.items.length} items), loading sample...`);
+  // Load ALL movies using pagination
+  if (forceRefresh || movieCache.items.length === 0 || movieCache.configHash !== configHash) {
+    console.log(`[CACHE] Loading ALL movies from Jellyfin...`);
     
-    // Fetch only first 1000 movies as a sample (much faster than 156k!)
-    const sampleSize = 1000;
+    const allMovies = [];
+    const pageSize = 500; // Fetch in chunks to avoid timeouts
+    let startIndex = 0;
+    let hasMore = true;
+    let totalRecords = 0;
+    
     try {
-      const params = {
-        IncludeItemTypes: ITEM_TYPE_MOVIE,
-        Recursive: true,
-        Fields: DEFAULT_FIELDS,
-        Limit: sampleSize,
-        StartIndex: 0,
-        UserId: config.userId
-      };
+      while (hasMore) {
+        const params = {
+          IncludeItemTypes: ITEM_TYPE_MOVIE,
+          Recursive: true,
+          Fields: DEFAULT_FIELDS,
+          Limit: pageSize,
+          StartIndex: startIndex,
+          UserId: config.userId
+        };
+        
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 30000);
+        
+        if (!data || !data.Items || data.Items.length === 0) {
+          hasMore = false;
+          break;
+        }
+        
+        const items = data.Items || [];
+        totalRecords = data.TotalRecordCount || items.length;
+        
+        allMovies.push(...items);
+        console.log(`[CACHE] Loaded ${allMovies.length} / ${totalRecords} movies...`);
+        
+        // Check if we've got all items
+        if (items.length < pageSize) {
+          hasMore = false;
+        } else if (totalRecords > 0 && allMovies.length >= totalRecords) {
+          hasMore = false;
+        } else {
+          startIndex += pageSize;
+          // Safety limit to prevent infinite loops (max 10,000 pages = 5 million items)
+          if (startIndex >= pageSize * 10000) {
+            console.warn(`[CACHE] Reached safety limit, stopping pagination`);
+            hasMore = false;
+          }
+        }
+      }
       
-      const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 15000);
-      if (data?.Items?.length > 0) {
-        movieCache.items = data.Items;
+      if (allMovies.length > 0) {
+        movieCache.items = allMovies;
         movieCache.configHash = configHash;
         movieCache.lastUpdated = Date.now();
-        indexMovies(data.Items);
-        console.log(`[CACHE] Loaded sample of ${data.Items.length} movies (cache will grow as catalogs are browsed)`);
+        indexMovies(allMovies);
+        console.log(`[CACHE] ✅ Loaded ALL ${allMovies.length} movies into cache`);
+      } else {
+        console.log(`[CACHE] No movies found in library`);
       }
     } catch (err) {
-      console.log(`[CACHE] Failed to load sample: ${err.message}`);
+      console.error(`[CACHE] Failed to load movies: ${err.message}`);
+      // If we got some movies before error, use those
+      if (allMovies.length > 0) {
+        movieCache.items = allMovies;
+        movieCache.configHash = configHash;
+        movieCache.lastUpdated = Date.now();
+        indexMovies(allMovies);
+        console.log(`[CACHE] Partial load: ${allMovies.length} movies (error occurred)`);
+      }
     }
   }
   
@@ -261,7 +303,7 @@ function addSeriesToCache(series) {
 }
 
 /**
- * Loads series into cache (fetches from Jellyfin if needed, but limits to prevent timeout)
+ * Loads ALL series into cache using pagination
  */
 async function loadSeriesCache(config, forceRefresh = false) {
   const configHash = getConfigHash(config);
@@ -276,32 +318,74 @@ async function loadSeriesCache(config, forceRefresh = false) {
     }
   }
   
-  // If cache is empty or very small, try to load a sample (not all series - too slow!)
-  if (seriesCache.items.length === 0 || seriesCache.items.length < 1000) {
-    console.log(`[CACHE] Cache is empty/small (${seriesCache.items.length} items), loading sample...`);
+  // Load ALL series using pagination
+  if (forceRefresh || seriesCache.items.length === 0 || seriesCache.configHash !== configHash) {
+    console.log(`[CACHE] Loading ALL series from Jellyfin...`);
     
-    // Fetch only first 1000 series as a sample
-    const sampleSize = 1000;
+    const allSeries = [];
+    const pageSize = 500; // Fetch in chunks to avoid timeouts
+    let startIndex = 0;
+    let hasMore = true;
+    let totalRecords = 0;
+    
     try {
-      const params = {
-        IncludeItemTypes: ITEM_TYPE_SERIES,
-        Recursive: true,
-        Fields: "ProviderIds,Name,Id", // Only need these for series lookup
-        Limit: sampleSize,
-        StartIndex: 0,
-        UserId: config.userId
-      };
+      while (hasMore) {
+        const params = {
+          IncludeItemTypes: ITEM_TYPE_SERIES,
+          Recursive: true,
+          Fields: "ProviderIds,Name,Id", // Only need these for series lookup
+          Limit: pageSize,
+          StartIndex: startIndex,
+          UserId: config.userId
+        };
+        
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 30000);
+        
+        if (!data || !data.Items || data.Items.length === 0) {
+          hasMore = false;
+          break;
+        }
+        
+        const items = data.Items || [];
+        totalRecords = data.TotalRecordCount || items.length;
+        
+        allSeries.push(...items);
+        console.log(`[CACHE] Loaded ${allSeries.length} / ${totalRecords} series...`);
+        
+        // Check if we've got all items
+        if (items.length < pageSize) {
+          hasMore = false;
+        } else if (totalRecords > 0 && allSeries.length >= totalRecords) {
+          hasMore = false;
+        } else {
+          startIndex += pageSize;
+          // Safety limit to prevent infinite loops (max 10,000 pages = 5 million items)
+          if (startIndex >= pageSize * 10000) {
+            console.warn(`[CACHE] Reached safety limit, stopping pagination`);
+            hasMore = false;
+          }
+        }
+      }
       
-      const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 15000);
-      if (data?.Items?.length > 0) {
-        seriesCache.items = data.Items;
+      if (allSeries.length > 0) {
+        seriesCache.items = allSeries;
         seriesCache.configHash = configHash;
         seriesCache.lastUpdated = Date.now();
-        indexSeries(data.Items);
-        console.log(`[CACHE] Loaded sample of ${data.Items.length} series (cache will grow as catalogs are browsed)`);
+        indexSeries(allSeries);
+        console.log(`[CACHE] ✅ Loaded ALL ${allSeries.length} series into cache`);
+      } else {
+        console.log(`[CACHE] No series found in library`);
       }
     } catch (err) {
-      console.log(`[CACHE] Failed to load sample: ${err.message}`);
+      console.error(`[CACHE] Failed to load series: ${err.message}`);
+      // If we got some series before error, use those
+      if (allSeries.length > 0) {
+        seriesCache.items = allSeries;
+        seriesCache.configHash = configHash;
+        seriesCache.lastUpdated = Date.now();
+        indexSeries(allSeries);
+        console.log(`[CACHE] Partial load: ${allSeries.length} series (error occurred)`);
+      }
     }
   }
   
@@ -844,54 +928,36 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         console.log(`[FIND] ❌ NO MATCH FOUND in cache (${series.length} series)`);
         console.log(`[FIND] Searched for: imdb=${imdbId}, tmdb=${tmdbId}, tvdb=${tvdbId}, anidb=${anidbId}`);
         
-        // Fallback: If cache is small (< 2000) and we have IDs to search, try loading more or doing a direct search
-        if (series.length < 2000 && (imdbId || tmdbId || tvdbId || anidbId)) {
-            console.log(`[FIND] Cache is small (${series.length}), trying to load more series...`);
+        // Fallback: If cache is incomplete or empty, force reload all series
+        if (series.length === 0 || (series.length < 500 && (imdbId || tmdbId || tvdbId || anidbId))) {
+            console.log(`[FIND] Cache appears incomplete (${series.length} series), reloading all series...`);
             try {
-                // Try to load more series (up to 5000) to find the match
-                const moreParams = {
-                    IncludeItemTypes: ITEM_TYPE_SERIES,
-                    Recursive: true,
-                    Fields: "ProviderIds,Name,Id",
-                    Limit: 5000,
-                    StartIndex: 0,
-                    UserId: config.userId
-                };
-                
-                const moreData = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, moreParams, config, 20000);
-                if (moreData?.Items?.length > 0 && moreData.Items.length > series.length) {
-                    console.log(`[FIND] Loaded ${moreData.Items.length} total series for extended search`);
-                    // Add new series to cache
-                    const newSeries = moreData.Items.filter(s => !seriesCache.indexedById.has(s.Id));
-                    if (newSeries.length > 0) {
-                        addSeriesToCache(newSeries);
-                        // Re-search in expanded cache
-                        const expandedSeries = await loadSeriesCache(config, true); // Force refresh
-                        if (imdbId) {
-                            const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
-                            const numericImdb = imdbId.replace('tt', '');
-                            foundItems = [
-                                ...(seriesCache.indexedByImdb.get(imdbKey) || []),
-                                ...(numericImdb ? (seriesCache.indexedByImdb.get(numericImdb) || []) : [])
-                            ];
-                        }
-                        if (foundItems.length === 0 && tmdbId) {
-                            foundItems = seriesCache.indexedByTmdb.get(String(tmdbId)) || [];
-                        }
-                        if (foundItems.length === 0 && tvdbId) {
-                            foundItems = seriesCache.indexedByTvdb.get(String(tvdbId)) || [];
-                        }
-                        if (foundItems.length === 0 && anidbId) {
-                            foundItems = seriesCache.indexedByAnidb.get(String(anidbId)) || [];
-                        }
-                        // Verify matches
-                        if (foundItems.length > 0) {
-                            foundItems = foundItems.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                        }
-                    }
+                // Force reload all series into cache
+                const expandedSeries = await loadSeriesCache(config, true); // Force refresh
+                // Re-search in expanded cache
+                if (imdbId) {
+                    const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+                    const numericImdb = imdbId.replace('tt', '');
+                    foundItems = [
+                        ...(seriesCache.indexedByImdb.get(imdbKey) || []),
+                        ...(numericImdb ? (seriesCache.indexedByImdb.get(numericImdb) || []) : [])
+                    ];
+                }
+                if (foundItems.length === 0 && tmdbId) {
+                    foundItems = seriesCache.indexedByTmdb.get(String(tmdbId)) || [];
+                }
+                if (foundItems.length === 0 && tvdbId) {
+                    foundItems = seriesCache.indexedByTvdb.get(String(tvdbId)) || [];
+                }
+                if (foundItems.length === 0 && anidbId) {
+                    foundItems = seriesCache.indexedByAnidb.get(String(anidbId)) || [];
+                }
+                // Verify matches
+                if (foundItems.length > 0) {
+                    foundItems = foundItems.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                 }
             } catch (err) {
-                console.log(`[FIND] Fallback search failed: ${err.message}`);
+                console.log(`[FIND] Fallback reload failed: ${err.message}`);
             }
         }
         
