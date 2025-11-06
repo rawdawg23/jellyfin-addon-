@@ -775,64 +775,60 @@ function formatFileSize(bytes) {
 }
 
 /**
- * Creates comprehensive description string with all technical details in 4-line format.
+ * Creates comprehensive description string matching Emby format: "1080p • 1920x1080 H.264 DD+5.1 MKV • 8.5Mbps • 7.6GB"
  * @param {object} mediaInfo - Enriched media information object.
- * @returns {string} Multi-line description string with all available metadata.
+ * @returns {string} Single-line description string with all available metadata.
  */
 function buildStreamDescription(mediaInfo) {
-  const lines = [];
+  const parts = [];
   
-  // Line 1: Resolution (Quality tag + Dimensions)
-  const resolutionLine = [];
+  // Resolution (Quality tag + Dimensions)
   if (mediaInfo.qualityTag && mediaInfo.qualityTag !== 'Unknown') {
-    resolutionLine.push(mediaInfo.qualityTag);
+    parts.push(mediaInfo.qualityTag);
   }
   if (mediaInfo.resolutionDimensions) {
-    resolutionLine.push(mediaInfo.resolutionDimensions);
-  }
-  if (resolutionLine.length > 0) {
-    lines.push(resolutionLine.join(' • '));
+    parts.push(mediaInfo.resolutionDimensions);
   }
   
-  // Line 2: Type (HDR + Video Codec)
-  const typeLine = [];
+  // Video Codec (HDR + Video Codec)
+  const videoParts = [];
   if (mediaInfo.hdrTag) {
-    typeLine.push(mediaInfo.hdrTag);
+    videoParts.push(mediaInfo.hdrTag);
   }
   if (mediaInfo.videoTag) {
-    typeLine.push(mediaInfo.videoTag);
+    videoParts.push(mediaInfo.videoTag);
   }
-  if (typeLine.length > 0) {
-    lines.push(typeLine.join(' • '));
-  }
-  
-  // Line 3: REMUX (when available)
-  if (mediaInfo.isRemux) {
-    lines.push('REMUX');
+  if (videoParts.length > 0) {
+    parts.push(videoParts.join(' '));
   }
   
-  // Line 4: Audio information
+  // Audio
   if (mediaInfo.audioTag) {
-    lines.push(mediaInfo.audioTag);
+    parts.push(mediaInfo.audioTag);
   }
   
-  // Line 5: Container, Bitrate, Size
-  const fileLine = [];
+  // Container
   if (mediaInfo.container) {
-    fileLine.push(mediaInfo.container);
-  }
-  if (mediaInfo.bitrateFormatted) {
-    fileLine.push(mediaInfo.bitrateFormatted);
-  }
-  if (mediaInfo.sizeFormatted) {
-    fileLine.push(mediaInfo.sizeFormatted);
-  }
-  if (fileLine.length > 0) {
-    lines.push(fileLine.join(' • '));
+    parts.push(mediaInfo.container);
   }
   
-  // Join all lines with newline character
-  return lines.join('\n') || 'Stream Available';
+  // Bitrate
+  if (mediaInfo.bitrateFormatted) {
+    parts.push(mediaInfo.bitrateFormatted);
+  }
+  
+  // Size
+  if (mediaInfo.sizeFormatted) {
+    parts.push(mediaInfo.sizeFormatted);
+  }
+  
+  // REMUX (if available, add at end)
+  if (mediaInfo.isRemux) {
+    parts.push('REMUX');
+  }
+  
+  // Join all parts with bullet separator (matching Emby format)
+  return parts.length > 0 ? parts.join(' • ') : 'Direct Play';
 }
 
 /**
