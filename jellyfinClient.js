@@ -24,7 +24,11 @@ const movieCache = {
   indexedByAnidb: new Map(), // Map<anidbId, Array<items>>
   indexedById: new Map(), // Map<jellyfinId, item>
   lastUpdated: null,
-  configHash: null // Hash of config to detect changes
+  configHash: null, // Hash of config to detect changes
+  isLoading: false, // Whether cache is currently loading
+  loadingPromise: null, // Promise for ongoing load operation
+  totalItems: 0, // Total items in library (from API)
+  loadedItems: 0 // Items loaded so far
 };
 
 // --- In-Memory Cache for Series (to bypass Jellyfin's broken search API) ---
@@ -36,7 +40,11 @@ const seriesCache = {
   indexedByAnidb: new Map(), // Map<anidbId, Array<items>>
   indexedById: new Map(), // Map<jellyfinId, item>
   lastUpdated: null,
-  configHash: null // Hash of config to detect changes
+  configHash: null, // Hash of config to detect changes
+  isLoading: false, // Whether cache is currently loading
+  loadingPromise: null, // Promise for ongoing load operation
+  totalItems: 0, // Total items in library (from API)
+  loadedItems: 0 // Items loaded so far
 };
 
 /**
@@ -191,87 +199,111 @@ function addMoviesToCache(movies) {
 }
 
 /**
- * Loads ALL movies into cache using pagination
+ * Loads movies into cache incrementally using pagination (non-blocking)
+ * Can be called multiple times - will continue loading if already in progress
  */
 async function loadMovieCache(config, forceRefresh = false) {
   const configHash = getConfigHash(config);
   
   // Check if cache is valid (never expires - only reloads on forceRefresh or config change)
-  if (!forceRefresh && movieCache.items.length > 0 && movieCache.configHash === configHash) {
+  if (!forceRefresh && movieCache.items.length > 0 && movieCache.configHash === configHash && !movieCache.isLoading) {
     const cacheAge = Date.now() - movieCache.lastUpdated;
     console.log(`[CACHE] Using cached movies (${Math.floor(cacheAge / 1000)}s old, ${movieCache.items.length} items)`);
     return movieCache.items;
   }
   
-  // Load ALL movies using pagination
+  // If already loading, return the existing promise
+  if (movieCache.isLoading && movieCache.loadingPromise && movieCache.configHash === configHash) {
+    console.log(`[CACHE] Cache loading already in progress (${movieCache.loadedItems} / ${movieCache.totalItems || '?'} items)...`);
+    return movieCache.loadingPromise;
+  }
+  
+  // Start loading (non-blocking - returns immediately with partial cache)
   if (forceRefresh || movieCache.items.length === 0 || movieCache.configHash !== configHash) {
-    console.log(`[CACHE] Loading ALL movies from Jellyfin...`);
+    console.log(`[CACHE] Starting incremental movie cache load...`);
     
-    const allMovies = [];
-    const pageSize = 500; // Fetch in chunks to avoid timeouts
-    let startIndex = 0;
-    let hasMore = true;
-    let totalRecords = 0;
+    movieCache.isLoading = true;
+    movieCache.configHash = configHash;
+    movieCache.loadedItems = movieCache.items.length; // Continue from where we left off
+    movieCache.totalItems = 0;
     
-    try {
-      while (hasMore) {
-        const params = {
-          IncludeItemTypes: ITEM_TYPE_MOVIE,
-          Recursive: true,
-          Fields: DEFAULT_FIELDS,
-          Limit: pageSize,
-          StartIndex: startIndex,
-          UserId: config.userId
-        };
-        
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 30000);
-        
-        if (!data || !data.Items || data.Items.length === 0) {
-          hasMore = false;
-          break;
-        }
-        
-        const items = data.Items || [];
-        totalRecords = data.TotalRecordCount || items.length;
-        
-        allMovies.push(...items);
-        console.log(`[CACHE] Loaded ${allMovies.length} / ${totalRecords} movies...`);
-        
-        // Check if we've got all items
-        if (items.length < pageSize) {
-          hasMore = false;
-        } else if (totalRecords > 0 && allMovies.length >= totalRecords) {
-          hasMore = false;
-        } else {
-          startIndex += pageSize;
-          // Safety limit to prevent infinite loops (max 10,000 pages = 5 million items)
-          if (startIndex >= pageSize * 10000) {
-            console.warn(`[CACHE] Reached safety limit, stopping pagination`);
+    // Start loading in background (non-blocking)
+    movieCache.loadingPromise = (async () => {
+      const allMovies = [...movieCache.items]; // Start with existing items
+      const pageSize = 500; // Fetch in chunks to avoid timeouts
+      let startIndex = movieCache.items.length; // Continue from where we left off
+      let hasMore = true;
+      let totalRecords = 0;
+      
+      try {
+        while (hasMore) {
+          const params = {
+            IncludeItemTypes: ITEM_TYPE_MOVIE,
+            Recursive: true,
+            Fields: DEFAULT_FIELDS,
+            Limit: pageSize,
+            StartIndex: startIndex,
+            UserId: config.userId
+          };
+          
+          const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 30000);
+          
+          if (!data || !data.Items || data.Items.length === 0) {
             hasMore = false;
+            break;
+          }
+          
+          const items = data.Items || [];
+          totalRecords = data.TotalRecordCount || totalRecords;
+          movieCache.totalItems = totalRecords;
+          
+          // Add items to cache incrementally
+          allMovies.push(...items);
+          movieCache.items = allMovies; // Update cache immediately
+          movieCache.loadedItems = allMovies.length;
+          
+          // Index new items immediately (so they're searchable)
+          indexMovies(items);
+          
+          // Log progress every 5000 items or on first page
+          if (allMovies.length % 5000 < pageSize || startIndex === 0) {
+            console.log(`[CACHE] Loaded ${allMovies.length} / ${totalRecords || '?'} movies (${Math.round((allMovies.length / (totalRecords || allMovies.length)) * 100)}%)...`);
+          }
+          
+          // Check if we've got all items
+          if (items.length < pageSize) {
+            hasMore = false;
+          } else if (totalRecords > 0 && allMovies.length >= totalRecords) {
+            hasMore = false;
+          } else {
+            startIndex += pageSize;
+            // Safety limit to prevent infinite loops (max 10,000 pages = 5 million items)
+            if (startIndex >= pageSize * 10000) {
+              console.warn(`[CACHE] Reached safety limit, stopping pagination`);
+              hasMore = false;
+            }
           }
         }
-      }
-      
-      if (allMovies.length > 0) {
-        movieCache.items = allMovies;
-        movieCache.configHash = configHash;
+        
         movieCache.lastUpdated = Date.now();
-        indexMovies(allMovies);
-        console.log(`[CACHE] ✅ Loaded ALL ${allMovies.length} movies into cache`);
-      } else {
-        console.log(`[CACHE] No movies found in library`);
+        movieCache.isLoading = false;
+        console.log(`[CACHE] ✅ Finished loading ${allMovies.length} movies into cache`);
+        return allMovies;
+      } catch (err) {
+        movieCache.isLoading = false;
+        console.error(`[CACHE] Failed to load movies: ${err.message}`);
+        // If we got some movies before error, use those
+        if (allMovies.length > 0) {
+          movieCache.items = allMovies;
+          movieCache.lastUpdated = Date.now();
+          console.log(`[CACHE] Partial load: ${allMovies.length} movies (error occurred, cache still usable)`);
+        }
+        return allMovies;
       }
-    } catch (err) {
-      console.error(`[CACHE] Failed to load movies: ${err.message}`);
-      // If we got some movies before error, use those
-      if (allMovies.length > 0) {
-        movieCache.items = allMovies;
-        movieCache.configHash = configHash;
-        movieCache.lastUpdated = Date.now();
-        indexMovies(allMovies);
-        console.log(`[CACHE] Partial load: ${allMovies.length} movies (error occurred)`);
-      }
-    }
+    })();
+    
+    // Return immediately with current cache (don't wait for full load)
+    return movieCache.items;
   }
   
   return movieCache.items;
@@ -301,87 +333,111 @@ function addSeriesToCache(series) {
 }
 
 /**
- * Loads ALL series into cache using pagination
+ * Loads series into cache incrementally using pagination (non-blocking)
+ * Can be called multiple times - will continue loading if already in progress
  */
 async function loadSeriesCache(config, forceRefresh = false) {
   const configHash = getConfigHash(config);
   
   // Check if cache is valid (never expires - only reloads on forceRefresh or config change)
-  if (!forceRefresh && seriesCache.items.length > 0 && seriesCache.configHash === configHash) {
+  if (!forceRefresh && seriesCache.items.length > 0 && seriesCache.configHash === configHash && !seriesCache.isLoading) {
     const cacheAge = Date.now() - seriesCache.lastUpdated;
     console.log(`[CACHE] Using cached series (${Math.floor(cacheAge / 1000)}s old, ${seriesCache.items.length} items)`);
     return seriesCache.items;
   }
   
-  // Load ALL series using pagination
+  // If already loading, return the existing promise
+  if (seriesCache.isLoading && seriesCache.loadingPromise && seriesCache.configHash === configHash) {
+    console.log(`[CACHE] Cache loading already in progress (${seriesCache.loadedItems} / ${seriesCache.totalItems || '?'} items)...`);
+    return seriesCache.loadingPromise;
+  }
+  
+  // Start loading (non-blocking - returns immediately with partial cache)
   if (forceRefresh || seriesCache.items.length === 0 || seriesCache.configHash !== configHash) {
-    console.log(`[CACHE] Loading ALL series from Jellyfin...`);
+    console.log(`[CACHE] Starting incremental series cache load...`);
     
-    const allSeries = [];
-    const pageSize = 500; // Fetch in chunks to avoid timeouts
-    let startIndex = 0;
-    let hasMore = true;
-    let totalRecords = 0;
+    seriesCache.isLoading = true;
+    seriesCache.configHash = configHash;
+    seriesCache.loadedItems = seriesCache.items.length; // Continue from where we left off
+    seriesCache.totalItems = 0;
     
-    try {
-      while (hasMore) {
-        const params = {
-          IncludeItemTypes: ITEM_TYPE_SERIES,
-          Recursive: true,
-          Fields: "ProviderIds,Name,Id", // Only need these for series lookup
-          Limit: pageSize,
-          StartIndex: startIndex,
-          UserId: config.userId
-        };
-        
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 30000);
-        
-        if (!data || !data.Items || data.Items.length === 0) {
-          hasMore = false;
-          break;
-        }
-        
-        const items = data.Items || [];
-        totalRecords = data.TotalRecordCount || items.length;
-        
-        allSeries.push(...items);
-        console.log(`[CACHE] Loaded ${allSeries.length} / ${totalRecords} series...`);
-        
-        // Check if we've got all items
-        if (items.length < pageSize) {
-          hasMore = false;
-        } else if (totalRecords > 0 && allSeries.length >= totalRecords) {
-          hasMore = false;
-        } else {
-          startIndex += pageSize;
-          // Safety limit to prevent infinite loops (max 10,000 pages = 5 million items)
-          if (startIndex >= pageSize * 10000) {
-            console.warn(`[CACHE] Reached safety limit, stopping pagination`);
+    // Start loading in background (non-blocking)
+    seriesCache.loadingPromise = (async () => {
+      const allSeries = [...seriesCache.items]; // Start with existing items
+      const pageSize = 500; // Fetch in chunks to avoid timeouts
+      let startIndex = seriesCache.items.length; // Continue from where we left off
+      let hasMore = true;
+      let totalRecords = 0;
+      
+      try {
+        while (hasMore) {
+          const params = {
+            IncludeItemTypes: ITEM_TYPE_SERIES,
+            Recursive: true,
+            Fields: "ProviderIds,Name,Id", // Only need these for series lookup
+            Limit: pageSize,
+            StartIndex: startIndex,
+            UserId: config.userId
+          };
+          
+          const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 30000);
+          
+          if (!data || !data.Items || data.Items.length === 0) {
             hasMore = false;
+            break;
+          }
+          
+          const items = data.Items || [];
+          totalRecords = data.TotalRecordCount || totalRecords;
+          seriesCache.totalItems = totalRecords;
+          
+          // Add items to cache incrementally
+          allSeries.push(...items);
+          seriesCache.items = allSeries; // Update cache immediately
+          seriesCache.loadedItems = allSeries.length;
+          
+          // Index new items immediately (so they're searchable)
+          indexSeries(items);
+          
+          // Log progress every 5000 items or on first page
+          if (allSeries.length % 5000 < pageSize || startIndex === 0) {
+            console.log(`[CACHE] Loaded ${allSeries.length} / ${totalRecords || '?'} series (${Math.round((allSeries.length / (totalRecords || allSeries.length)) * 100)}%)...`);
+          }
+          
+          // Check if we've got all items
+          if (items.length < pageSize) {
+            hasMore = false;
+          } else if (totalRecords > 0 && allSeries.length >= totalRecords) {
+            hasMore = false;
+          } else {
+            startIndex += pageSize;
+            // Safety limit to prevent infinite loops (max 10,000 pages = 5 million items)
+            if (startIndex >= pageSize * 10000) {
+              console.warn(`[CACHE] Reached safety limit, stopping pagination`);
+              hasMore = false;
+            }
           }
         }
-      }
-      
-      if (allSeries.length > 0) {
-        seriesCache.items = allSeries;
-        seriesCache.configHash = configHash;
+        
         seriesCache.lastUpdated = Date.now();
-        indexSeries(allSeries);
-        console.log(`[CACHE] ✅ Loaded ALL ${allSeries.length} series into cache`);
-      } else {
-        console.log(`[CACHE] No series found in library`);
+        seriesCache.isLoading = false;
+        console.log(`[CACHE] ✅ Finished loading ${allSeries.length} series into cache`);
+        return allSeries;
+      } catch (err) {
+        seriesCache.isLoading = false;
+        console.error(`[CACHE] Failed to load series: ${err.message}`);
+        // If we got some series before error, use those
+        if (allSeries.length > 0) {
+          seriesCache.items = allSeries;
+          seriesCache.lastUpdated = Date.now();
+          console.log(`[CACHE] Partial load: ${allSeries.length} series (error occurred, cache still usable)`);
+        }
+        return allSeries;
       }
-    } catch (err) {
-      console.error(`[CACHE] Failed to load series: ${err.message}`);
-      // If we got some series before error, use those
-      if (allSeries.length > 0) {
-        seriesCache.items = allSeries;
-        seriesCache.configHash = configHash;
-        seriesCache.lastUpdated = Date.now();
-        indexSeries(allSeries);
-        console.log(`[CACHE] Partial load: ${allSeries.length} series (error occurred)`);
-      }
-    }
+    })();
+    
+    // Return immediately with current cache (don't wait for full load)
+    return seriesCache.items;
   }
   
   return seriesCache.items;
@@ -758,10 +814,23 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
     console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
     console.log(`[FIND] ==========================================`);
     
-    // FIRST: Search existing cache if available - FAST PATH
+    // FIRST: Search existing cache if available - FAST PATH (works with partial cache)
     const configHash = getConfigHash(config);
+    
+    // Start cache loading in background if not already loaded/loading
+    if (movieCache.items.length === 0 || movieCache.configHash !== configHash) {
+        // Start loading cache in background (non-blocking)
+        loadMovieCache(config, false).catch(err => {
+            console.log(`[FIND] Background cache load failed: ${err.message}`);
+        });
+    }
+    
+    // Search cache even if it's still loading (partial cache is better than no cache)
     if (movieCache.items.length > 0 && movieCache.configHash === configHash) {
-        console.log(`[FIND] Searching cache (${movieCache.items.length} movies)...`);
+        const cacheStatus = movieCache.isLoading ? 
+            `(loading: ${movieCache.loadedItems} / ${movieCache.totalItems || '?'} items)` : 
+            `(${movieCache.items.length} items)`;
+        console.log(`[FIND] Searching cache ${cacheStatus}...`);
         
         let foundItems = [];
         
@@ -815,9 +884,13 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
             }
         }
         
-        console.log(`[FIND] ❌ Not found in cache (${movieCache.items.length} movies indexed), trying direct API search...`);
+        if (movieCache.isLoading) {
+            console.log(`[FIND] ❌ Not found in partial cache (${movieCache.loadedItems} / ${movieCache.totalItems || '?'} items loaded), trying direct API search...`);
+        } else {
+            console.log(`[FIND] ❌ Not found in cache (${movieCache.items.length} movies indexed), trying direct API search...`);
+        }
     } else {
-        console.log(`[FIND] Cache is empty, skipping cache load and trying direct API search (fast)...`);
+        console.log(`[FIND] Cache is empty, trying direct API search (cache loading in background)...`);
     }
     
     // FALLBACK: Direct API search (like original Emby StreamBridge) - FAST, doesn't load all movies
@@ -1019,10 +1092,23 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
     console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
     console.log(`[FIND] ==========================================`);
     
-    // FIRST: Search existing cache if available - FAST PATH
+    // FIRST: Search existing cache if available - FAST PATH (works with partial cache)
     const configHash = getConfigHash(config);
+    
+    // Start cache loading in background if not already loaded/loading
+    if (seriesCache.items.length === 0 || seriesCache.configHash !== configHash) {
+        // Start loading cache in background (non-blocking)
+        loadSeriesCache(config, false).catch(err => {
+            console.log(`[FIND] Background cache load failed: ${err.message}`);
+        });
+    }
+    
+    // Search cache even if it's still loading (partial cache is better than no cache)
     if (seriesCache.items.length > 0 && seriesCache.configHash === configHash) {
-        console.log(`[FIND] Searching cache (${seriesCache.items.length} series)...`);
+        const cacheStatus = seriesCache.isLoading ? 
+            `(loading: ${seriesCache.loadedItems} / ${seriesCache.totalItems || '?'} items)` : 
+            `(${seriesCache.items.length} items)`;
+        console.log(`[FIND] Searching cache ${cacheStatus}...`);
         
         let foundItems = [];
         
@@ -1076,9 +1162,13 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
             }
         }
         
-        console.log(`[FIND] ❌ Not found in cache (${seriesCache.items.length} series indexed), trying direct API search...`);
+        if (seriesCache.isLoading) {
+            console.log(`[FIND] ❌ Not found in partial cache (${seriesCache.loadedItems} / ${seriesCache.totalItems || '?'} items loaded), trying direct API search...`);
+        } else {
+            console.log(`[FIND] ❌ Not found in cache (${seriesCache.items.length} series indexed), trying direct API search...`);
+        }
     } else {
-        console.log(`[FIND] Cache is empty, skipping cache load and trying direct API search (fast)...`);
+        console.log(`[FIND] Cache is empty, trying direct API search (cache loading in background)...`);
     }
     
     // FALLBACK: Direct API search (like original Emby StreamBridge) - FAST, doesn't load all series
@@ -2307,6 +2397,8 @@ module.exports = {
     parseMediaId,
     deduplicateAndSortStreams,
     makeJellyfinApiRequest,
-    addMoviesToCache
+    addMoviesToCache,
+    findMovieItem,
+    findSeriesItem
 };
 

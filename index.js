@@ -28,6 +28,13 @@ const app  = express();
 // Global middleware & static assets
 // ──────────────────────────────────────────────────────────────────────────
 app.use(cors());
+// Add cache-busting headers for test page
+app.use('/test-search.html', (req, res, next) => {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -564,7 +571,8 @@ app.get("/test-search", async (req, res) => {
   }
 
   const testImdbId = req.query.imdbId || 'tt0147800';
-  console.log('[TEST-SEARCH] Testing with IMDb ID:', testImdbId);
+  const testType = req.query.type || 'movie'; // 'movie' or 'series'
+  console.log('[TEST-SEARCH] Testing with IMDb ID:', testImdbId, 'Type:', testType);
   
   const results = {
     config: {
@@ -573,6 +581,13 @@ app.get("/test-search", async (req, res) => {
       apiKeyPreview: cfg.accessToken ? `${cfg.accessToken.substring(0, 10)}...` : 'MISSING'
     },
     testImdbId: testImdbId,
+    testType: testType,
+    summary: {
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      jellyfinSearchBroken: false
+    },
     tests: []
   };
 
@@ -590,119 +605,591 @@ app.get("/test-search", async (req, res) => {
     }
   }
 
-  const jellyfinApi = require('./jellyfinClient');
   const axios = require('axios');
   const HEADER_JELLYFIN_TOKEN = 'X-Emby-Token';
+  const itemType = testType === 'series' ? 'Series' : 'Movie';
 
-  // Test 1: /Users/{userId}/Items with ImdbId
+  // Test 1: /Users/{userId}/Items with ImdbId parameter
   try {
     const url1 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
     const params1 = {
       ImdbId: testImdbId,
-      IncludeItemTypes: 'Movie',
+      IncludeItemTypes: itemType,
       Recursive: true,
       Fields: 'ProviderIds,Name,Id',
       Limit: 10
     };
+    const startTime1 = Date.now();
     const response1 = await axios({
       method: 'get',
       url: url1,
       headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
       params: params1,
-      timeout: 10000
+      timeout: 15000
     });
+    const duration1 = Date.now() - startTime1;
+    // Check if any items actually match
+    const matchingItems1 = (response1.data?.Items || []).filter(item => {
+      const providerIds = item.ProviderIds || {};
+      const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+      return hasImdb && (hasImdb === testImdbId || hasImdb === testImdbId.replace('tt', ''));
+    });
+    
     results.tests.push({
-      name: '/Users/{userId}/Items with ImdbId parameter',
+      name: `1. /Users/{userId}/Items with ImdbId parameter`,
       url: url1,
       params: params1,
       status: response1.status,
+      duration: duration1,
       itemsCount: response1.data?.Items?.length || 0,
-      items: (response1.data?.Items || []).slice(0, 3).map(item => ({
-        name: item.Name,
-        id: item.Id,
-        providerIds: item.ProviderIds
-      }))
+      matchingCount: matchingItems1.length,
+      items: (response1.data?.Items || []).slice(0, 3).map(item => {
+        const providerIds = item.ProviderIds || {};
+        const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+        const matches = hasImdb && (hasImdb === testImdbId || hasImdb === testImdbId.replace('tt', ''));
+        return {
+          name: item.Name,
+          id: item.Id,
+          providerIds: item.ProviderIds,
+          matches: matches,
+          note: matches ? '✅ Matches IMDb ID' : `❌ Does NOT match (has: ${hasImdb || 'no IMDb ID'})`
+        };
+      }),
+      note: matchingItems1.length === 0 && response1.data?.Items?.length > 0 ?
+        `⚠️ Jellyfin returned ${response1.data.Items.length} items but NONE have matching IMDb ID!` : 
+        matchingItems1.length > 0 ? `✅ ${matchingItems1.length} item(s) actually match` : ''
     });
   } catch (err) {
     results.tests.push({
-      name: '/Users/{userId}/Items with ImdbId parameter',
+      name: `1. /Users/{userId}/Items with ImdbId parameter`,
       error: err.message,
-      status: err.response?.status
+      status: err.response?.status,
+      duration: 0
     });
   }
 
-  // Test 2: /Users/{userId}/Items with AnyProviderIdEquals
+  // Test 2: /Users/{userId}/Items with AnyProviderIdEquals (imdb.xxx)
   try {
     const url2 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
     const params2 = {
       AnyProviderIdEquals: `imdb.${testImdbId}`,
-      IncludeItemTypes: 'Movie',
+      IncludeItemTypes: itemType,
       Recursive: true,
       Fields: 'ProviderIds,Name,Id',
       Limit: 10
     };
+    const startTime2 = Date.now();
     const response2 = await axios({
       method: 'get',
       url: url2,
       headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
       params: params2,
-      timeout: 10000
+      timeout: 15000
     });
+    const duration2 = Date.now() - startTime2;
+    // Check if any items actually match
+    const matchingItems2 = (response2.data?.Items || []).filter(item => {
+      const providerIds = item.ProviderIds || {};
+      const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+      return hasImdb && (hasImdb === testImdbId || hasImdb === testImdbId.replace('tt', ''));
+    });
+    
     results.tests.push({
-      name: '/Users/{userId}/Items with AnyProviderIdEquals=imdb.xxx',
+      name: `2. /Users/{userId}/Items with AnyProviderIdEquals=imdb.${testImdbId}`,
       url: url2,
       params: params2,
       status: response2.status,
+      duration: duration2,
       itemsCount: response2.data?.Items?.length || 0,
-      items: (response2.data?.Items || []).slice(0, 3).map(item => ({
-        name: item.Name,
-        id: item.Id,
-        providerIds: item.ProviderIds
-      }))
+      matchingCount: matchingItems2.length,
+      items: (response2.data?.Items || []).slice(0, 3).map(item => {
+        const providerIds = item.ProviderIds || {};
+        const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+        const matches = hasImdb && (hasImdb === testImdbId || hasImdb === testImdbId.replace('tt', ''));
+        return {
+          name: item.Name,
+          id: item.Id,
+          providerIds: item.ProviderIds,
+          matches: matches,
+          note: matches ? '✅ Matches IMDb ID' : `❌ Does NOT match (has: ${hasImdb || 'no IMDb ID'})`
+        };
+      }),
+      note: matchingItems2.length === 0 && response2.data?.Items?.length > 0 ?
+        `⚠️ Jellyfin returned ${response2.data.Items.length} items but NONE have matching IMDb ID!` : 
+        matchingItems2.length > 0 ? `✅ ${matchingItems2.length} item(s) actually match` : ''
     });
   } catch (err) {
     results.tests.push({
-      name: '/Users/{userId}/Items with AnyProviderIdEquals=imdb.xxx',
+      name: `2. /Users/{userId}/Items with AnyProviderIdEquals=imdb.${testImdbId}`,
       error: err.message,
-      status: err.response?.status
+      status: err.response?.status,
+      duration: 0
     });
   }
 
-  // Test 3: Sample of movies to see ProviderIds format
+  // Test 3: /Users/{userId}/Items with AnyProviderIdEquals (Imdb.xxx - capitalized)
   try {
     const url3 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
     const params3 = {
-      IncludeItemTypes: 'Movie',
+      AnyProviderIdEquals: `Imdb.${testImdbId}`,
+      IncludeItemTypes: itemType,
       Recursive: true,
       Fields: 'ProviderIds,Name,Id',
-      Limit: 5,
-      StartIndex: 0
+      Limit: 10
     };
+    const startTime3 = Date.now();
     const response3 = await axios({
       method: 'get',
       url: url3,
       headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
       params: params3,
-      timeout: 10000
+      timeout: 15000
     });
+    const duration3 = Date.now() - startTime3;
+    // Check if any items actually match
+    const matchingItems3 = (response3.data?.Items || []).filter(item => {
+      const providerIds = item.ProviderIds || {};
+      const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+      return hasImdb && (hasImdb === testImdbId || hasImdb === testImdbId.replace('tt', ''));
+    });
+    
     results.tests.push({
-      name: 'Sample movies (to see ProviderIds format)',
+      name: `3. /Users/{userId}/Items with AnyProviderIdEquals=Imdb.${testImdbId}`,
       url: url3,
       params: params3,
       status: response3.status,
+      duration: duration3,
       itemsCount: response3.data?.Items?.length || 0,
-      items: (response3.data?.Items || []).map(item => ({
-        name: item.Name,
-        id: item.Id,
-        providerIds: item.ProviderIds
-      }))
+      matchingCount: matchingItems3.length,
+      items: (response3.data?.Items || []).slice(0, 3).map(item => {
+        const providerIds = item.ProviderIds || {};
+        const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+        const matches = hasImdb && (hasImdb === testImdbId || hasImdb === testImdbId.replace('tt', ''));
+        return {
+          name: item.Name,
+          id: item.Id,
+          providerIds: item.ProviderIds,
+          matches: matches,
+          note: matches ? '✅ Matches IMDb ID' : `❌ Does NOT match (has: ${hasImdb || 'no IMDb ID'})`
+        };
+      }),
+      note: matchingItems3.length === 0 && response3.data?.Items?.length > 0 ?
+        `⚠️ Jellyfin returned ${response3.data.Items.length} items but NONE have matching IMDb ID!` : 
+        matchingItems3.length > 0 ? `✅ ${matchingItems3.length} item(s) actually match` : ''
     });
   } catch (err) {
     results.tests.push({
-      name: 'Sample movies (to see ProviderIds format)',
+      name: `3. /Users/{userId}/Items with AnyProviderIdEquals=Imdb.${testImdbId}`,
+      error: err.message,
+      status: err.response?.status,
+      duration: 0
+    });
+  }
+
+  // Test 4: Using optimized findMovieItem/findSeriesItem function
+  try {
+    console.log('[TEST-SEARCH] Running Test 4: Optimized search function');
+    const startTime4 = Date.now();
+    let foundItems = [];
+    if (testType === 'series') {
+      foundItems = await jellyfin.findSeriesItem(testImdbId, null, null, null, cfg, null);
+    } else {
+      foundItems = await jellyfin.findMovieItem(testImdbId, null, null, null, cfg, null);
+    }
+    const duration4 = Date.now() - startTime4;
+    console.log(`[TEST-SEARCH] Test 4 completed in ${duration4}ms, found ${foundItems?.length || 0} items`);
+    results.tests.push({
+      name: `4. Optimized find${testType === 'series' ? 'Series' : 'Movie'}Item() function (with ProviderIds filtering)`,
+      status: 200,
+      duration: duration4,
+      itemsCount: foundItems?.length || 0,
+      matchingCount: foundItems?.length || 0, // All items match since they're filtered
+      items: (foundItems || []).slice(0, 3).map(item => ({
+        name: item.Name,
+        id: item.Id,
+        providerIds: item.ProviderIds,
+        matches: true // These are already filtered to match
+      })),
+      note: foundItems?.length > 0 ? 
+        '✅ These items were verified to have matching ProviderIds' : 
+        '❌ No items found with matching ProviderIds (Jellyfin search returned wrong items)'
+    });
+  } catch (err) {
+    console.error('[TEST-SEARCH] Test 4 error:', err.message, err.stack);
+    results.tests.push({
+      name: `4. Optimized find${testType === 'series' ? 'Series' : 'Movie'}Item() function (with ProviderIds filtering)`,
+      error: err.message,
+      duration: 0,
+      note: '❌ Error occurred during optimized search'
+    });
+  }
+
+  // Test 5: Search library for the specific IMDb ID (manual search through sample)
+  try {
+    const url5 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
+    const params5 = {
+      IncludeItemTypes: itemType,
+      Recursive: true,
+      Fields: 'ProviderIds,Name,Id',
+      Limit: 100, // Check first 100 items
+      StartIndex: 0
+    };
+    const startTime5 = Date.now();
+    const response5 = await axios({
+      method: 'get',
+      url: url5,
+      headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
+      params: params5,
+      timeout: 15000
+    });
+    const duration5 = Date.now() - startTime5;
+    
+    // Search through items for matching IMDb ID
+    const allItems = response5.data?.Items || [];
+    const matchingItems5 = allItems.filter(item => {
+      const providerIds = item.ProviderIds || {};
+      const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+      return hasImdb && (hasImdb === testImdbId || hasImdb === testImdbId.replace('tt', ''));
+    });
+    
+    results.tests.push({
+      name: `5. Manual search through first 100 ${itemType.toLowerCase()}s`,
+      url: url5,
+      params: params5,
+      status: response5.status,
+      duration: duration5,
+      itemsCount: allItems.length,
+      matchingCount: matchingItems5.length,
+      items: matchingItems5.length > 0 ? 
+        matchingItems5.slice(0, 3).map(item => ({
+          name: item.Name,
+          id: item.Id,
+          providerIds: item.ProviderIds,
+          matches: true,
+          note: '✅ Found in library!'
+        })) :
+        allItems.slice(0, 5).map(item => ({
+          name: item.Name,
+          id: item.Id,
+          providerIds: item.ProviderIds,
+          matches: false,
+          note: 'Sample item (not matching)'
+        })),
+      note: matchingItems5.length > 0 ? 
+        `✅ Found ${matchingItems5.length} matching item(s) in first 100 ${itemType.toLowerCase()}s!` :
+        `❌ Not found in first 100 ${itemType.toLowerCase()}s. The item may not be in your library, or it's beyond the first 100 items.`
+    });
+  } catch (err) {
+    results.tests.push({
+      name: `5. Manual search through first 100 ${itemType.toLowerCase()}s`,
+      error: err.message,
+      status: err.response?.status,
+      duration: 0
+    });
+  }
+
+  // Calculate summary
+  results.summary.totalTests = results.tests.length;
+  results.summary.passedTests = results.tests.filter(t => !t.error && t.matchingCount > 0).length;
+  results.summary.failedTests = results.tests.filter(t => {
+    // Failed if: error occurred, OR returned items but none match, OR timeout
+    return t.error || (t.itemsCount > 0 && t.matchingCount === 0) || (t.error && t.error.includes('timeout'));
+  }).length;
+  
+  // Jellyfin search is broken if:
+  // 1. API tests return items but none match, OR
+  // 2. All API tests timeout/error, OR
+  // 3. Optimized function finds 0 items (meaning API returned wrong items)
+  const apiTests = results.tests.filter(t => t.name.includes('/Users/') && !t.name.includes('Optimized'));
+  const optimizedTest = results.tests.find(t => t.name.includes('Optimized'));
+  
+  results.summary.jellyfinSearchBroken = 
+    // API tests returned wrong items
+    apiTests.some(t => !t.error && t.itemsCount > 0 && t.matchingCount === 0) ||
+    // All API tests failed/timed out
+    (apiTests.length > 0 && apiTests.every(t => t.error)) ||
+    // Optimized function found nothing (meaning API is broken)
+    (optimizedTest && optimizedTest.itemsCount === 0 && !optimizedTest.error);
+
+  res.json(results);
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// DIRECT ACCESS TEST endpoint  →  /test-direct-access?cfg=<base64config>
+// Tests alternative ways to access Jellyfin items directly
+// ──────────────────────────────────────────────────────────────────────────
+app.get("/test-direct-access", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+
+  console.log('[TEST-DIRECT-ACCESS] Request received');
+
+  const cfgStr = req.query.cfg;
+  if (!cfgStr) {
+    return res.status(400).json({ error: "Missing cfg parameter" });
+  }
+
+  let cfg;
+  try {
+    cfg = JSON.parse(Buffer.from(cfgStr, "base64url").toString("utf8"));
+    if (cfg.serverUrl) {
+      cfg.serverUrl = cfg.serverUrl.replace(/\/+$/, '');
+    }
+  } catch (err) {
+    return res.status(400).json({ error: "Invalid cfg parameter: " + err.message });
+  }
+
+  const testItemId = req.query.itemId; // Optional: test with specific Jellyfin item ID
+  const testType = req.query.type || 'movie'; // 'movie' or 'series'
+  const itemType = testType === 'series' ? 'Series' : 'Movie';
+
+  const results = {
+    config: {
+      serverUrl: cfg.serverUrl,
+      userId: cfg.userId || '(will auto-fetch)',
+      apiKeyPreview: cfg.accessToken ? `${cfg.accessToken.substring(0, 10)}...` : 'MISSING'
+    },
+    testType: testType,
+    tests: []
+  };
+
+  if (!jellyfin) {
+    return res.status(500).json({ error: "jellyfinClient not loaded", results });
+  }
+
+  // Auto-fetch User ID if needed
+  if (!cfg.userId) {
+    const user = await jellyfin.getCurrentUser(cfg);
+    if (user && user.Id) {
+      cfg.userId = user.Id;
+      results.config.userId = cfg.userId;
+    }
+  }
+
+  const axios = require('axios');
+  const HEADER_JELLYFIN_TOKEN = 'X-Emby-Token';
+
+  // Test 1: Get a sample item directly by enumerating items
+  try {
+    console.log('[TEST-DIRECT-ACCESS] Test 1: Enumerating items...');
+    const url1 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
+    const params1 = {
+      IncludeItemTypes: itemType,
+      Recursive: true,
+      Fields: 'ProviderIds,Name,Id,Type',
+      Limit: 10,
+      StartIndex: 0,
+      SortBy: 'SortName',
+      SortOrder: 'Ascending'
+    };
+    const startTime1 = Date.now();
+    const response1 = await axios({
+      method: 'get',
+      url: url1,
+      headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
+      params: params1,
+      timeout: 15000
+    });
+    const duration1 = Date.now() - startTime1;
+    
+    const items = response1.data?.Items || [];
+    const itemsWithImdb = items.filter(item => {
+      const providerIds = item.ProviderIds || {};
+      return providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+    });
+    
+    results.tests.push({
+      name: '1. Direct enumeration (first 10 items)',
+      status: response1.status,
+      duration: duration1,
+      totalItems: response1.data?.TotalRecordCount || 0,
+      itemsReturned: items.length,
+      itemsWithImdb: itemsWithImdb.length,
+      sampleItems: items.slice(0, 5).map(item => ({
+        id: item.Id,
+        name: item.Name,
+        type: item.Type,
+        providerIds: item.ProviderIds,
+        hasImdb: !!(item.ProviderIds?.Imdb || item.ProviderIds?.imdb || item.ProviderIds?.IMDB)
+      })),
+      note: itemsWithImdb.length > 0 ? 
+        `✅ ${itemsWithImdb.length} of ${items.length} items have IMDb IDs` :
+        `⚠️ None of the ${items.length} items have IMDb IDs`
+    });
+  } catch (err) {
+    results.tests.push({
+      name: '1. Direct enumeration',
       error: err.message,
       status: err.response?.status
     });
+  }
+
+  // Test 2: Direct item access by ID (if itemId provided, or use first item from Test 1)
+  if (testItemId || (results.tests[0] && results.tests[0].sampleItems && results.tests[0].sampleItems.length > 0)) {
+    try {
+      const itemId = testItemId || results.tests[0].sampleItems[0].id;
+      console.log(`[TEST-DIRECT-ACCESS] Test 2: Direct access to item ${itemId}...`);
+      const url2 = `${cfg.serverUrl}/Users/${cfg.userId}/Items/${itemId}`;
+      const startTime2 = Date.now();
+      const response2 = await axios({
+        method: 'get',
+        url: url2,
+        headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
+        params: { Fields: 'ProviderIds,Name,Id,Type,MediaSources' },
+        timeout: 15000
+      });
+      const duration2 = Date.now() - startTime2;
+      
+      const item = response2.data;
+      results.tests.push({
+        name: `2. Direct item access by ID (${itemId.substring(0, 8)}...)`,
+        status: response2.status,
+        duration: duration2,
+        item: {
+          id: item.Id,
+          name: item.Name,
+          type: item.Type,
+          providerIds: item.ProviderIds,
+          hasMediaSources: !!(item.MediaSources && item.MediaSources.length > 0),
+          mediaSourceCount: item.MediaSources?.length || 0
+        },
+        note: item.ProviderIds && (item.ProviderIds.Imdb || item.ProviderIds.imdb || item.ProviderIds.IMDB) ?
+          `✅ Item accessible directly, has IMDb ID` :
+          `⚠️ Item accessible but no IMDb ID`
+      });
+    } catch (err) {
+      results.tests.push({
+        name: '2. Direct item access by ID',
+        error: err.message,
+        status: err.response?.status
+      });
+    }
+  }
+
+  // Test 3: Test cache loading (with timeout - this can be slow for large libraries)
+  try {
+    console.log('[TEST-DIRECT-ACCESS] Test 3: Testing cache access (with 30s timeout)...');
+    const startTime3 = Date.now();
+    
+    // Use Promise.race to add a timeout
+    const cachePromise = testType === 'movie' ? 
+      jellyfin.getMovies(cfg) : 
+      jellyfin.getSeries(cfg);
+    
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Cache loading timeout after 30 seconds')), 30000)
+    );
+    
+    try {
+      const items = await Promise.race([cachePromise, timeoutPromise]);
+      const duration3 = Date.now() - startTime3;
+      results.tests.push({
+        name: `3. Cache/Get${testType === 'movie' ? 'Movies' : 'Series'} function`,
+        status: 200,
+        duration: duration3,
+        itemsReturned: items?.length || 0,
+        note: items && items.length > 0 ?
+          `✅ Successfully loaded ${items.length} ${testType === 'movie' ? 'movies' : 'series'} via cache` :
+          `⚠️ No ${testType === 'movie' ? 'movies' : 'series'} loaded`
+      });
+    } catch (timeoutErr) {
+      const duration3 = Date.now() - startTime3;
+      results.tests.push({
+        name: `3. Cache/Get${testType === 'movie' ? 'Movies' : 'Series'} function`,
+        status: 200,
+        duration: duration3,
+        error: timeoutErr.message,
+        note: `⚠️ Cache loading timed out after 30s (library may be too large). This is normal for large libraries.`
+      });
+    }
+  } catch (err) {
+    results.tests.push({
+      name: `3. Cache/Get${testType === 'movie' ? 'Movies' : 'Series'} function`,
+      error: err.message,
+      note: 'Cache loading failed or timed out'
+    });
+  }
+
+  // Test 4: Test pagination (get items in chunks)
+  try {
+    console.log('[TEST-DIRECT-ACCESS] Test 4: Testing pagination...');
+    const url4 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
+    const params4 = {
+      IncludeItemTypes: itemType,
+      Recursive: true,
+      Fields: 'ProviderIds,Name,Id',
+      Limit: 100,
+      StartIndex: 0
+    };
+    const startTime4 = Date.now();
+    const response4 = await axios({
+      method: 'get',
+      url: url4,
+      headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
+      params: params4,
+      timeout: 15000
+    });
+    const duration4 = Date.now() - startTime4;
+    
+    const items4 = response4.data?.Items || [];
+    const totalRecords = response4.data?.TotalRecordCount || 0;
+    const itemsWithProviderIds = items4.filter(item => {
+      const providerIds = item.ProviderIds || {};
+      return Object.keys(providerIds).length > 0;
+    });
+    
+    results.tests.push({
+      name: '4. Pagination test (first 100 items)',
+      status: response4.status,
+      duration: duration4,
+      totalRecords: totalRecords,
+      itemsReturned: items4.length,
+      itemsWithProviderIds: itemsWithProviderIds.length,
+      note: totalRecords > 0 ?
+        `✅ Total ${totalRecords} ${itemType.toLowerCase()}s in library, ${itemsWithProviderIds.length} have ProviderIds` :
+        `⚠️ No items found`
+    });
+  } catch (err) {
+    results.tests.push({
+      name: '4. Pagination test',
+      error: err.message,
+      status: err.response?.status
+    });
+  }
+
+  // Test 5: Build direct access index (sample)
+  if (results.tests[0] && results.tests[0].sampleItems) {
+    try {
+      const sampleItems = results.tests[0].sampleItems;
+      const index = sampleItems
+        .filter(item => item.hasImdb)
+        .map(item => ({
+          jellyfinId: item.id,
+          name: item.name,
+          imdbId: item.providerIds?.Imdb || item.providerIds?.imdb || item.providerIds?.IMDB,
+          directAccessUrl: `${cfg.serverUrl}/Users/${cfg.userId}/Items/${item.id}`
+        }));
+      
+      results.tests.push({
+        name: '5. Direct access index (sample)',
+        status: 200,
+        indexSize: index.length,
+        sampleIndex: index.slice(0, 5),
+        note: index.length > 0 ?
+          `✅ Can build direct access index for ${index.length} items with IMDb IDs` :
+          `⚠️ No items with IMDb IDs found for indexing`
+      });
+    } catch (err) {
+      results.tests.push({
+        name: '5. Direct access index',
+        error: err.message
+      });
+    }
   }
 
   res.json(results);

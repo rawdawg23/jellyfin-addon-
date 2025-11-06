@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jellyfin Search API Test</title>
+    <title>Jellyfin Direct Access Test</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -33,7 +33,7 @@
             color: #b0b0b0;
             font-weight: 500;
         }
-        input {
+        input, select {
             width: 100%;
             padding: 10px;
             background: #1a1a1a;
@@ -41,6 +41,7 @@
             border-radius: 4px;
             color: #e0e0e0;
             font-size: 14px;
+            box-sizing: border-box;
         }
         button {
             background: #4a9eff;
@@ -69,15 +70,15 @@
             margin-bottom: 15px;
             border-left: 4px solid #4a9eff;
         }
-        .test-result h3 {
-            margin-top: 0;
-            color: #4a9eff;
-        }
         .test-result.success {
             border-left-color: #4caf50;
         }
         .test-result.error {
             border-left-color: #f44336;
+        }
+        .test-result h3 {
+            margin-top: 0;
+            color: #4a9eff;
         }
         .item {
             background: #1a1a1a;
@@ -102,10 +103,18 @@
             overflow-x: auto;
             font-size: 12px;
         }
+        .index-item {
+            background: #1a1a1a;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 3px solid #4caf50;
+        }
     </style>
 </head>
 <body>
-    <h1>🔍 Jellyfin Search API Test</h1>
+    <h1>🔧 Jellyfin Direct Access Test</h1>
+    <p style="color: #888;">Test alternative ways to access Jellyfin items directly, bypassing the broken search API</p>
     
     <div class="config-section">
         <h2>Configuration</h2>
@@ -123,17 +132,16 @@
         </div>
         <div class="form-group">
             <label>Test Type:</label>
-            <select id="testType" style="width: 100%; padding: 10px; background: #1a1a1a; border: 1px solid #444; border-radius: 4px; color: #e0e0e0; font-size: 14px;">
+            <select id="testType">
                 <option value="movie">Movie</option>
                 <option value="series">TV Show / Series</option>
             </select>
         </div>
         <div class="form-group">
-            <label>Test IMDb ID:</label>
-            <input type="text" id="imdbId" placeholder="tt0147800" value="tt0147800">
-            <small style="color: #888; font-size: 12px;">Examples: tt0147800 (12 Angry Men), tt5180504 (The Witcher)</small>
+            <label>Item ID (optional - test direct access to specific item):</label>
+            <input type="text" id="itemId" placeholder="Leave empty to test with sample items">
         </div>
-        <button id="runTest" onclick="runTest()">Run Search Tests</button>
+        <button id="runTest" onclick="runTest()">Run Direct Access Tests</button>
     </div>
 
     <div id="results" class="results"></div>
@@ -144,7 +152,7 @@
             const apiKey = document.getElementById('apiKey').value.trim();
             const userId = document.getElementById('userId').value.trim();
             const testType = document.getElementById('testType').value;
-            const imdbId = document.getElementById('imdbId').value.trim() || 'tt0147800';
+            const itemId = document.getElementById('itemId').value.trim();
             
             if (!serverUrl || !apiKey) {
                 alert('Please fill in Server URL and API Key');
@@ -156,7 +164,7 @@
             button.textContent = 'Running Tests...';
 
             const resultsDiv = document.getElementById('results');
-            resultsDiv.innerHTML = '<div class="loading">⏳ Running tests... This may take up to 2 minutes due to Jellyfin API slowness.<br><small>Please wait...</small></div>';
+            resultsDiv.innerHTML = '<div class="loading">⏳ Testing direct access methods...<br><small>This may take up to 1 minute</small></div>';
 
             // Create config object
             const config = {
@@ -165,22 +173,20 @@
                 userId: userId || undefined
             };
 
-            // Convert to base64url (browser-compatible)
-            // First convert to base64, then convert base64url-safe characters
+            // Convert to base64url
             const jsonStr = JSON.stringify(config);
             const base64 = btoa(unescape(encodeURIComponent(jsonStr)));
             const cfgStr = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 
-            // Call test endpoint
+            // Build URL
+            let testUrl = `${window.location.origin}/test-direct-access?cfg=${cfgStr}&type=${testType}`;
+            if (itemId) {
+                testUrl += `&itemId=${encodeURIComponent(itemId)}`;
+            }
+
             try {
-                const baseUrl = window.location.origin;
-                const testUrl = `${baseUrl}/test-search?cfg=${cfgStr}&imdbId=${imdbId}&type=${testType}`;
-                
-                console.log('Fetching:', testUrl);
-                
-                // Add timeout (increased for slow Jellyfin API)
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout (2 minutes)
+                const timeoutId = setTimeout(() => controller.abort(), 120000);
                 
                 const response = await fetch(testUrl, { 
                     signal: controller.signal 
@@ -194,26 +200,23 @@
                 }
                 
                 const data = await response.json();
-                console.log('Results:', data);
-
                 displayResults(data);
             } catch (error) {
                 console.error('Test error:', error);
                 let errorMsg = error.message;
                 if (error.name === 'AbortError') {
-                    errorMsg = 'Request timed out after 2 minutes. Jellyfin API is very slow. Try testing with a movie you know exists in your library.';
+                    errorMsg = 'Request timed out after 2 minutes';
                 }
                 resultsDiv.innerHTML = `
                     <div class="test-result error">
                         <h3>❌ Error</h3>
                         <p><strong>${errorMsg}</strong></p>
                         <p>Check the browser console (F12) for more details.</p>
-                        <p>Make sure the server is running and the /test-search endpoint is accessible.</p>
                     </div>
                 `;
             } finally {
                 button.disabled = false;
-                button.textContent = 'Run Search Tests';
+                button.textContent = 'Run Direct Access Tests';
             }
         }
 
@@ -221,36 +224,20 @@
             const resultsDiv = document.getElementById('results');
             let html = '<h2>Test Results</h2>';
             
-            // Summary section
-            if (data.summary) {
-                const summaryColor = data.summary.jellyfinSearchBroken ? '#f44336' : '#4caf50';
-                html += `<div class="test-result" style="border-left-color: ${summaryColor}; background: ${data.summary.jellyfinSearchBroken ? '#3a1a1a' : '#1a3a1a'};">
-                    <h3>📊 Summary</h3>
-                    <p><strong>Total Tests:</strong> ${data.summary.totalTests}</p>
-                    <p><strong>Passed:</strong> <span style="color: #4caf50">${data.summary.passedTests}</span></p>
-                    <p><strong>Failed:</strong> <span style="color: #f44336">${data.summary.failedTests}</span></p>
-                    ${data.summary.jellyfinSearchBroken ? 
-                        '<p style="color: #f44336; font-weight: bold; font-size: 16px;">⚠️ CRITICAL: Jellyfin search API is broken! It returns wrong items that don\'t match the IMDb ID.</p>' : 
-                        '<p style="color: #4caf50; font-weight: bold;">✅ Jellyfin search appears to be working correctly.</p>'
-                    }
-                </div>`;
-            }
-            
             html += `<div class="test-result">
                 <h3>Configuration</h3>
                 <p><strong>Server:</strong> ${data.config.serverUrl}</p>
                 <p><strong>User ID:</strong> ${data.config.userId}</p>
                 <p><strong>API Key:</strong> ${data.config.apiKeyPreview}</p>
                 <p><strong>Test Type:</strong> ${data.testType || 'movie'}</p>
-                <p><strong>Test IMDb ID:</strong> ${data.testImdbId}</p>
             </div>`;
 
             data.tests.forEach((test, idx) => {
-                const isSuccess = !test.error && test.itemsCount > 0;
-                const className = test.error ? 'error' : (isSuccess ? 'success' : '');
+                const isSuccess = !test.error;
+                const className = test.error ? 'error' : 'success';
                 
                 html += `<div class="test-result ${className}">`;
-                html += `<h3>${idx + 1}. ${test.name}</h3>`;
+                html += `<h3>${test.name}</h3>`;
                 
                 if (test.error) {
                     html += `<p><strong>Error:</strong> ${test.error}</p>`;
@@ -258,35 +245,68 @@
                         html += `<p><strong>HTTP Status:</strong> ${test.status}</p>`;
                     }
                 } else {
-                    html += `<p><strong>HTTP Status:</strong> ${test.status || 'N/A'}</p>`;
-                    html += `<p><strong>Items Returned:</strong> ${test.itemsCount}</p>`;
-                    if (test.matchingCount !== undefined) {
-                        const matchColor = test.matchingCount > 0 ? '#4caf50' : '#f44336';
-                        html += `<p><strong>Items Actually Matching:</strong> <span style="color: ${matchColor}">${test.matchingCount}</span></p>`;
+                    if (test.status) {
+                        html += `<p><strong>HTTP Status:</strong> ${test.status}</p>`;
                     }
                     if (test.duration !== undefined) {
                         html += `<p><strong>Duration:</strong> ${test.duration}ms</p>`;
+                    }
+                    if (test.totalItems !== undefined) {
+                        html += `<p><strong>Total Items:</strong> ${test.totalItems}</p>`;
+                    }
+                    if (test.itemsReturned !== undefined) {
+                        html += `<p><strong>Items Returned:</strong> ${test.itemsReturned}</p>`;
+                    }
+                    if (test.itemsWithImdb !== undefined) {
+                        html += `<p><strong>Items with IMDb ID:</strong> ${test.itemsWithImdb}</p>`;
+                    }
+                    if (test.totalRecords !== undefined) {
+                        html += `<p><strong>Total Records in Library:</strong> ${test.totalRecords}</p>`;
+                    }
+                    if (test.itemsWithProviderIds !== undefined) {
+                        html += `<p><strong>Items with ProviderIds:</strong> ${test.itemsWithProviderIds}</p>`;
                     }
                     if (test.note) {
                         const noteColor = test.note.includes('✅') ? '#4caf50' : test.note.includes('⚠️') ? '#ff9800' : '#f44336';
                         html += `<p style="color: ${noteColor}; font-weight: bold;">${test.note}</p>`;
                     }
                     
-                    if (test.items && test.items.length > 0) {
+                    if (test.sampleItems && test.sampleItems.length > 0) {
                         html += `<h4>Sample Items:</h4>`;
-                        test.items.forEach((item, itemIdx) => {
-                            const itemColor = item.matches ? '#4caf50' : '#f44336';
+                        test.sampleItems.forEach((item, itemIdx) => {
+                            const itemColor = item.hasImdb ? '#4caf50' : '#f44336';
                             html += `<div class="item" style="border-left: 4px solid ${itemColor};">`;
                             html += `<strong>Item ${itemIdx + 1}:</strong> "${item.name}"<br>`;
                             html += `<strong>ID:</strong> ${item.id}<br>`;
+                            html += `<strong>Type:</strong> ${item.type}<br>`;
                             html += `<strong>ProviderIds:</strong> <pre>${JSON.stringify(item.providerIds, null, 2)}</pre>`;
-                            if (item.note) {
-                                html += `<p style="color: ${itemColor}; font-weight: bold; margin-top: 5px;">${item.note}</p>`;
-                            }
+                            html += `<p style="color: ${itemColor}; font-weight: bold;">${item.hasImdb ? '✅ Has IMDb ID' : '❌ No IMDb ID'}</p>`;
                             html += `</div>`;
                         });
-                    } else {
-                        html += `<p>⚠️ No items returned</p>`;
+                    }
+                    
+                    if (test.item) {
+                        html += `<h4>Direct Access Result:</h4>`;
+                        html += `<div class="item">`;
+                        html += `<strong>Name:</strong> ${test.item.name}<br>`;
+                        html += `<strong>ID:</strong> ${test.item.id}<br>`;
+                        html += `<strong>Type:</strong> ${test.item.type}<br>`;
+                        html += `<strong>ProviderIds:</strong> <pre>${JSON.stringify(test.item.providerIds, null, 2)}</pre>`;
+                        html += `<strong>Has Media Sources:</strong> ${test.item.hasMediaSources ? 'Yes' : 'No'} (${test.item.mediaSourceCount})`;
+                        html += `</div>`;
+                    }
+                    
+                    if (test.sampleIndex && test.sampleIndex.length > 0) {
+                        html += `<h4>Direct Access Index (Sample):</h4>`;
+                        html += `<p><strong>Index Size:</strong> ${test.indexSize} items</p>`;
+                        test.sampleIndex.forEach((indexItem, idx) => {
+                            html += `<div class="index-item">`;
+                            html += `<strong>${idx + 1}. ${indexItem.name}</strong><br>`;
+                            html += `<strong>Jellyfin ID:</strong> ${indexItem.jellyfinId}<br>`;
+                            html += `<strong>IMDb ID:</strong> ${indexItem.imdbId}<br>`;
+                            html += `<strong>Direct URL:</strong> <code>${indexItem.directAccessUrl}</code>`;
+                            html += `</div>`;
+                        });
                     }
                 }
                 
@@ -295,21 +315,6 @@
 
             resultsDiv.innerHTML = html;
         }
-
-        // Auto-fill from URL if available
-        window.addEventListener('DOMContentLoaded', () => {
-            const params = new URLSearchParams(window.location.search);
-            if (params.get('cfg')) {
-                try {
-                    const cfgJson = JSON.parse(Buffer.from(params.get('cfg'), 'base64url').toString('utf8'));
-                    if (cfgJson.serverUrl) document.getElementById('serverUrl').value = cfgJson.serverUrl;
-                    if (cfgJson.accessToken) document.getElementById('apiKey').value = cfgJson.accessToken;
-                    if (cfgJson.userId) document.getElementById('userId').value = cfgJson.userId;
-                } catch (e) {
-                    console.error('Failed to parse config from URL:', e);
-                }
-            }
-        });
     </script>
 </body>
 </html>
