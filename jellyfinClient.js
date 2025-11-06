@@ -289,7 +289,18 @@ async function makeJellyfinApiRequest(url, params = {}, config, timeoutMs = 5000
         // Log API key info (first 10 chars only for security)
         const apiKeyPreview = config.accessToken ? 
             `${config.accessToken.substring(0, 10)}...` : 'MISSING';
+        
+        // Log the full request details for debugging
+        const paramKeys = Object.keys(params);
+        const importantParams = {};
+        if (params.ImdbId) importantParams.ImdbId = params.ImdbId;
+        if (params.TmdbId) importantParams.TmdbId = params.TmdbId;
+        if (params.AnyProviderIdEquals) importantParams.AnyProviderIdEquals = params.AnyProviderIdEquals;
+        if (params.IncludeItemTypes) importantParams.IncludeItemTypes = params.IncludeItemTypes;
+        
         console.log(`[API] Request to ${normalizedUrl.split('?')[0]} with API key: ${apiKeyPreview} (timeout: ${timeoutMs}ms)`);
+        console.log(`[API] Key params:`, JSON.stringify(importantParams));
+        console.log(`[API] Full params count: ${paramKeys.length}, keys: ${paramKeys.slice(0, 10).join(', ')}${paramKeys.length > 10 ? '...' : ''}`);
         
         const response = await axios({
             method: 'get',
@@ -298,10 +309,27 @@ async function makeJellyfinApiRequest(url, params = {}, config, timeoutMs = 5000
             params: params,
             timeout: timeoutMs, // Configurable timeout per request
         });
-        return response.data;
-    } catch (err) {
+        const responseData = response.data;
         
-        console.warn(`⚠️ API Request failed for ${url} with params ${JSON.stringify(params)}:`, err.message);
+        // Log response summary for search requests
+        if (params.ImdbId || params.TmdbId || params.AnyProviderIdEquals) {
+            const itemCount = responseData?.Items?.length || 0;
+            if (itemCount > 0) {
+                const firstItem = responseData.Items[0];
+                console.log(`[API] Search returned ${itemCount} items. First item: "${firstItem.Name}" (ID: ${firstItem.Id})`);
+                console.log(`[API] First item ProviderIds:`, JSON.stringify(firstItem.ProviderIds || {}));
+            } else {
+                console.log(`[API] Search returned 0 items`);
+            }
+        }
+        
+        return responseData;
+    } catch (err) {
+        const paramSummary = params.ImdbId ? `ImdbId=${params.ImdbId}` : 
+                            params.TmdbId ? `TmdbId=${params.TmdbId}` :
+                            params.AnyProviderIdEquals ? `AnyProviderIdEquals=${params.AnyProviderIdEquals}` : 'other params';
+        
+        console.warn(`⚠️ API Request failed for ${url} with ${paramSummary}:`, err.message);
         
         if (err.response?.status === 401) {
             const apiKeyPreview = config.accessToken ? 
