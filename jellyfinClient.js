@@ -962,19 +962,28 @@ async function getStream(idOrExternalId, config) {
 async function getMovies(config) {
     if (!config.serverUrl || !config.userId || !config.accessToken) {
         console.error("❌ Configuration missing for getMovies");
-        return null;
+        return [];
     }
     
-    const params = {
-        IncludeItemTypes: ITEM_TYPE_MOVIE,
-        Recursive: true,
-        Fields: "ProviderIds,Name,Id,Overview,ProductionYear,RunTimeTicks,Genres,ImageTags",
-        Limit: 1000,
-        UserId: config.userId
-    };
-    
-    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config);
-    return data?.Items || [];
+    try {
+        const params = {
+            IncludeItemTypes: ITEM_TYPE_MOVIE,
+            Recursive: true,
+            Fields: "ProviderIds,Name,Id,Overview,ProductionYear,RunTimeTicks,Genres,ImageTags",
+            Limit: 1000,
+            UserId: config.userId
+        };
+        
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config);
+        if (!data) {
+            console.error("❌ getMovies: No data returned from Jellyfin API");
+            return [];
+        }
+        return data.Items || [];
+    } catch (err) {
+        console.error("❌ getMovies error:", err.message);
+        return [];
+    }
 }
 
 /**
@@ -985,19 +994,28 @@ async function getMovies(config) {
 async function getSeries(config) {
     if (!config.serverUrl || !config.userId || !config.accessToken) {
         console.error("❌ Configuration missing for getSeries");
-        return null;
+        return [];
     }
     
-    const params = {
-        IncludeItemTypes: ITEM_TYPE_SERIES,
-        Recursive: true,
-        Fields: "ProviderIds,Name,Id,Overview,ProductionYear,Genres,ImageTags",
-        Limit: 1000,
-        UserId: config.userId
-    };
-    
-    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config);
-    return data?.Items || [];
+    try {
+        const params = {
+            IncludeItemTypes: ITEM_TYPE_SERIES,
+            Recursive: true,
+            Fields: "ProviderIds,Name,Id,Overview,ProductionYear,Genres,ImageTags",
+            Limit: 1000,
+            UserId: config.userId
+        };
+        
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config);
+        if (!data) {
+            console.error("❌ getSeries: No data returned from Jellyfin API");
+            return [];
+        }
+        return data.Items || [];
+    } catch (err) {
+        console.error("❌ getSeries error:", err.message);
+        return [];
+    }
 }
 
 // --- Exports ---
