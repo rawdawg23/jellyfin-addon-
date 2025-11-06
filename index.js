@@ -329,11 +329,29 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
     // Handle library-specific catalogs (jellyfin-library-{libraryId})
     if (catalogId.startsWith("jellyfin-library-")) {
       const libraryId = catalogId.replace("jellyfin-library-", "");
-      console.log(`[CATALOG] Fetching items from library ${libraryId} (${type})...`);
+      console.log(`[CATALOG] Fetching ALL items from library ${libraryId} (${type})...`);
       
-      // Get items from specific library
-      items = await jellyfin.getCollectionItems(libraryId, type === "movie" ? "Movie" : (type === "series" ? "Series" : null), cfg) || [];
-      console.log(`[CATALOG] Found ${items.length} ${type} items from library ${libraryId}`);
+      // Get ALL items from specific library (no type filter - get everything)
+      const allItems = await jellyfin.getCollectionItems(libraryId, null, cfg) || [];
+      console.log(`[CATALOG] Found ${allItems.length} total items from library ${libraryId}`);
+      
+      // Filter by type: movies + music videos for movie catalog, series for series catalog
+      if (type === "movie") {
+        // Include Movies and MusicVideo (treat music videos as movies)
+        items = allItems.filter(item => 
+          item.Type === "Movie" || 
+          item.Type === "MusicVideo" ||
+          item.Type === "Video" // Generic video items
+        );
+        console.log(`[CATALOG] Filtered to ${items.length} movie/MusicVideo items`);
+      } else if (type === "series") {
+        // Include Series only
+        items = allItems.filter(item => item.Type === "Series");
+        console.log(`[CATALOG] Filtered to ${items.length} series items`);
+      } else {
+        // Unknown type, return all items
+        items = allItems;
+      }
     } else if (type === "movie" && catalogId === "jellyfin-movies") {
       console.log(`[CATALOG] Fetching all movies from Jellyfin...`);
       items = await jellyfin.getMovies(cfg) || [];
