@@ -96,7 +96,29 @@ function indexMovies(movies) {
 }
 
 /**
- * Loads movies into cache (fetches from Jellyfin if needed)
+ * Adds movies to cache (called when catalog items are fetched)
+ */
+function addMoviesToCache(movies) {
+  if (!movies || movies.length === 0) return;
+  
+  const newMovies = movies.filter(movie => {
+    // Only add if not already in cache
+    return !movieCache.indexedById.has(movie.Id);
+  });
+  
+  if (newMovies.length > 0) {
+    console.log(`[CACHE] Adding ${newMovies.length} new movies to cache...`);
+    movieCache.items.push(...newMovies);
+    
+    // Re-index all movies
+    indexMovies(movieCache.items);
+    movieCache.lastUpdated = Date.now();
+    console.log(`[CACHE] Cache now contains ${movieCache.items.length} movies`);
+  }
+}
+
+/**
+ * Loads movies into cache (fetches from Jellyfin if needed, but limits to prevent timeout)
  */
 async function loadMovieCache(config, forceRefresh = false) {
   const configHash = getConfigHash(config);
@@ -106,25 +128,41 @@ async function loadMovieCache(config, forceRefresh = false) {
     const cacheAge = Date.now() - movieCache.lastUpdated;
     const maxAge = 5 * 60 * 1000; // 5 minutes
     if (cacheAge < maxAge) {
-      console.log(`[CACHE] Using cached movies (${Math.floor(cacheAge / 1000)}s old)`);
+      console.log(`[CACHE] Using cached movies (${Math.floor(cacheAge / 1000)}s old, ${movieCache.items.length} items)`);
       return movieCache.items;
     }
   }
   
-  console.log(`[CACHE] Fetching movies from Jellyfin...`);
-  
-  // Fetch all movies
-  const movies = await getMovies(config) || [];
-  
-  if (movies.length > 0) {
-    movieCache.items = movies;
-    movieCache.configHash = configHash;
-    movieCache.lastUpdated = Date.now();
-    indexMovies(movies);
-    console.log(`[CACHE] Cached ${movies.length} movies`);
+  // If cache is empty or very small, try to load a sample (not all movies - too slow!)
+  if (movieCache.items.length === 0 || movieCache.items.length < 1000) {
+    console.log(`[CACHE] Cache is empty/small (${movieCache.items.length} items), loading sample...`);
+    
+    // Fetch only first 1000 movies as a sample (much faster than 156k!)
+    const sampleSize = 1000;
+    try {
+      const params = {
+        IncludeItemTypes: ITEM_TYPE_MOVIE,
+        Recursive: true,
+        Fields: DEFAULT_FIELDS,
+        Limit: sampleSize,
+        StartIndex: 0,
+        UserId: config.userId
+      };
+      
+      const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 15000);
+      if (data?.Items?.length > 0) {
+        movieCache.items = data.Items;
+        movieCache.configHash = configHash;
+        movieCache.lastUpdated = Date.now();
+        indexMovies(data.Items);
+        console.log(`[CACHE] Loaded sample of ${data.Items.length} movies (cache will grow as catalogs are browsed)`);
+      }
+    } catch (err) {
+      console.log(`[CACHE] Failed to load sample: ${err.message}`);
+    }
   }
   
-  return movies;
+  return movieCache.items;
 }
 
 // --- Helper Functions ---
@@ -1694,6 +1732,7 @@ module.exports = {
     getCurrentUser,
     parseMediaId,
     deduplicateAndSortStreams,
-    makeJellyfinApiRequest
+    makeJellyfinApiRequest,
+    addMoviesToCache
 };
 
