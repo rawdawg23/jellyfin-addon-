@@ -28,35 +28,82 @@ const CODEC_FORMAT_MAP = {
  * @returns {boolean} True if a match is found, false otherwise.
  */
 function _isMatchingProviderId(providerIds, imdbIdToMatch, tmdbIdToMatch, tvdbIdToMatch, anidbIdToMatch) {
-    if (!providerIds) return false;
+    if (!providerIds) {
+        return false;
+    }
 
     // Check IMDb (case-insensitive and numeric format)
     if (imdbIdToMatch) {
         const numericImdbVal = imdbIdToMatch.replace('tt', '');
-        if (providerIds.Imdb === imdbIdToMatch || providerIds.imdb === imdbIdToMatch || providerIds.IMDB === imdbIdToMatch) return true;
-        if (numericImdbVal && (providerIds.Imdb === numericImdbVal || providerIds.imdb === numericImdbVal || providerIds.IMDB === numericImdbVal)) return true;
+        const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+        
+        const matchesFull = providerIds.Imdb === imdbIdToMatch || providerIds.imdb === imdbIdToMatch || providerIds.IMDB === imdbIdToMatch;
+        const matchesNumeric = numericImdbVal && (providerIds.Imdb === numericImdbVal || providerIds.imdb === numericImdbVal || providerIds.IMDB === numericImdbVal);
+        
+        if (matchesFull || matchesNumeric) {
+            return true;
+        }
+        
+        // Debug mismatch
+        if (hasImdb) {
+            console.log(`[MATCH] IMDb mismatch: Looking for "${imdbIdToMatch}" or "${numericImdbVal}", found "${hasImdb}"`);
+        }
     }
 
     // Check TMDb (case-insensitive and string/number comparison)
     if (tmdbIdToMatch) {
-        const tmdbIdStr = String(tmdbIdToMatch); // Ensure it's a string for comparison
-        if (providerIds.Tmdb === tmdbIdStr || providerIds.tmdb === tmdbIdStr || providerIds.TMDB === tmdbIdStr ||
-            (providerIds.Tmdb && String(providerIds.Tmdb) === tmdbIdStr)) return true; // Compare against Jellyfin's value as string too
+        const tmdbIdStr = String(tmdbIdToMatch);
+        const hasTmdb = providerIds.Tmdb || providerIds.tmdb || providerIds.TMDB;
+        
+        const matches = providerIds.Tmdb === tmdbIdStr || providerIds.tmdb === tmdbIdStr || providerIds.TMDB === tmdbIdStr ||
+            (providerIds.Tmdb && String(providerIds.Tmdb) === tmdbIdStr);
+        
+        if (matches) {
+            return true;
+        }
+        
+        // Debug mismatch
+        if (hasTmdb) {
+            console.log(`[MATCH] TMDB mismatch: Looking for "${tmdbIdStr}", found "${hasTmdb}"`);
+        }
     }
 
     // Check TVDB (case-insensitive and string/number comparison)
     if (tvdbIdToMatch) {
-        const tvdbIdStr = String(tvdbIdToMatch); // Ensure it's a string for comparison
-        if (providerIds.Tvdb === tvdbIdStr || providerIds.tvdb === tvdbIdStr || providerIds.TVDB === tvdbIdStr ||
-            (providerIds.Tvdb && String(providerIds.Tvdb) === tvdbIdStr)) return true; // Compare against Jellyfin's value as string too
+        const tvdbIdStr = String(tvdbIdToMatch);
+        const hasTvdb = providerIds.Tvdb || providerIds.tvdb || providerIds.TVDB;
+        
+        const matches = providerIds.Tvdb === tvdbIdStr || providerIds.tvdb === tvdbIdStr || providerIds.TVDB === tvdbIdStr ||
+            (providerIds.Tvdb && String(providerIds.Tvdb) === tvdbIdStr);
+        
+        if (matches) {
+            return true;
+        }
+        
+        // Debug mismatch
+        if (hasTvdb) {
+            console.log(`[MATCH] TVDB mismatch: Looking for "${tvdbIdStr}", found "${hasTvdb}"`);
+        }
     }
 
     // Check AniDB (case-insensitive and string/number comparison)
     if (anidbIdToMatch) {
-        const anidbIdStr = String(anidbIdToMatch); // Ensure it's a string for comparison
-        if (providerIds.AniDb === anidbIdStr || providerIds.anidb === anidbIdStr || providerIds.ANIDB === anidbIdStr ||
-            (providerIds.AniDb && String(providerIds.AniDb) === anidbIdStr)) return true; // Compare against Jellyfin's value as string too
+        const anidbIdStr = String(anidbIdToMatch);
+        const hasAnidb = providerIds.AniDb || providerIds.anidb || providerIds.ANIDB;
+        
+        const matches = providerIds.AniDb === anidbIdStr || providerIds.anidb === anidbIdStr || providerIds.ANIDB === anidbIdStr ||
+            (providerIds.AniDb && String(providerIds.AniDb) === anidbIdStr);
+        
+        if (matches) {
+            return true;
+        }
+        
+        // Debug mismatch
+        if (hasAnidb) {
+            console.log(`[MATCH] AniDB mismatch: Looking for "${anidbIdStr}", found "${hasAnidb}"`);
+        }
     }
+    
     return false;
 }
 
