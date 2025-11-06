@@ -128,11 +128,21 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  // Set timeout to prevent hanging - Stremio needs quick responses
+  const timeout = setTimeout(() => {
+    console.error("[STREAM] Request timeout - returning empty streams");
+    if (!res.headersSent) {
+      res.set('Cache-Control', 'no-cache');
+      res.json({ streams: [] });
+    }
+  }, 15000); // 15 second timeout
+
   let cfg;
   try {
     cfg = decodeCfg(req.params.cfg);
   } catch (err) {
     console.error("[STREAM] Failed to decode config:", err);
+    clearTimeout(timeout);
     return res.json({ streams: [] });
   }
 
@@ -141,6 +151,7 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
   
   if (!cfg.serverUrl || !cfg.accessToken) {
     console.error("[STREAM] Missing configuration (need serverUrl and accessToken)");
+    clearTimeout(timeout);
     return res.json({ streams: [] });
   }
   
@@ -151,6 +162,7 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
 
   if (!jellyfin) {
     console.error("[STREAM] jellyfinClient not loaded");
+    clearTimeout(timeout);
     return res.json({ streams: [] });
   }
 
@@ -188,19 +200,24 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
         return stream;
       });
     // Set cache based on whether streams were found
+    clearTimeout(timeout);
     if (streams.length > 0) {
       console.log(`[STREAM] Returning ${streams.length} stream(s) to Stremio`);
       res.set('Cache-Control', 'public, max-age=120');  // Cache for 2 minutes when streams exist
     } else {
-      console.warn(`[STREAM] No streams found for ${type}/${id}`);
+      console.warn(`[STREAM] No streams found for ${type}/${id} - movie may not be in Jellyfin library`);
       res.set('Cache-Control', 'no-cache');  // Don't cache empty results
     }
 
     res.json({ streams });
   } catch (e) {
+    clearTimeout(timeout);
     console.error("[STREAM] Handler error:", e);
     console.error("[STREAM] Error stack:", e.stack);
-    res.json({ streams: [] });
+    if (!res.headersSent) {
+      res.set('Cache-Control', 'no-cache');
+      res.json({ streams: [] });
+    }
   }
 });
 
