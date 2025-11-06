@@ -281,7 +281,7 @@ async function getCurrentUser(config) {
  * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
  * @returns {Promise<object|null>} The response data object or null if an error occurs.
  */
-async function makeJellyfinApiRequest(url, params = {}, config) {
+async function makeJellyfinApiRequest(url, params = {}, config, timeoutMs = 5000) {
     try {
         // Normalize URL - ensure no double slashes (except after protocol)
         let normalizedUrl = url.replace(/([^:]\/)\/+/g, '$1');
@@ -289,14 +289,14 @@ async function makeJellyfinApiRequest(url, params = {}, config) {
         // Log API key info (first 10 chars only for security)
         const apiKeyPreview = config.accessToken ? 
             `${config.accessToken.substring(0, 10)}...` : 'MISSING';
-        console.log(`[API] Request to ${normalizedUrl.split('?')[0]} with API key: ${apiKeyPreview}`);
+        console.log(`[API] Request to ${normalizedUrl.split('?')[0]} with API key: ${apiKeyPreview} (timeout: ${timeoutMs}ms)`);
         
         const response = await axios({
             method: 'get',
             url: normalizedUrl,
             headers: { [HEADER_JELLYFIN_TOKEN]: config.accessToken },
             params: params,
-            timeout: 5000, // 5 second timeout per request to prevent hanging on large libraries
+            timeout: timeoutMs, // Configurable timeout per request
         });
         return response.data;
     } catch (err) {
@@ -1506,9 +1506,11 @@ async function getCollectionItems(collectionId, itemType, config) {
     
     try {
         const allItems = [];
-        const pageSize = 10000;
+        const pageSize = 500; // Reduced from 10000 to prevent timeouts - fetch in smaller chunks
         let startIndex = 0;
         let hasMore = true;
+        
+        console.log(`[GETCOLLECTIONITEMS] Starting to fetch items from collection ${collectionId} (pageSize: ${pageSize})`);
         
         while (hasMore) {
             const params = {
@@ -1528,7 +1530,8 @@ async function getCollectionItems(collectionId, itemType, config) {
             }
             // If itemType is null, we fetch all types (Movie, Series, MusicVideo, etc.)
             
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
+            // Use longer timeout (30 seconds) for catalog requests since they can be large
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config, 30000);
             
             if (!data || !data.Items) {
                 console.error("❌ getCollectionItems: No data returned from Jellyfin API");
@@ -1593,11 +1596,11 @@ async function getSeries(config) {
     
     try {
         const allItems = [];
-        const pageSize = 10000; // Items per page (increased to reduce requests)
+        const pageSize = 500; // Reduced from 10000 to prevent timeouts - fetch in smaller chunks
         let startIndex = 0;
         let hasMore = true;
         
-        console.log(`[GETSERIES] Starting paginated fetch for series...`);
+        console.log(`[GETSERIES] Starting to fetch series (pageSize: ${pageSize})`);
         
         while (hasMore) {
             const params = {
@@ -1609,7 +1612,8 @@ async function getSeries(config) {
                 UserId: userId
             };
             
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
+            // Use longer timeout (30 seconds) for catalog requests since they can be large
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config, 30000);
             if (!data) {
                 console.error("❌ getSeries: No data returned from Jellyfin API");
                 break;
