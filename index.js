@@ -1,5 +1,5 @@
 /**
- * StreamBridge – Jellyfin → Stremio addon
+ * EP-FIN – Jellyfin → Stremio addon
  * Full Express server with parameterised manifest + stream routes
  * User data is embedded in the URL path as a base64-url string.
  */
@@ -37,7 +37,7 @@ function baseManifest () {
   return {
     id      : "org.streambridge.jellyfinresolver",
     version : "1.2.0",
-    name    : "StreamBridge: Jellyfin to Stremio",
+    name    : "EP-FIN",
     description:
       "Stream media from your personal or shared Jellyfin server using IMDb/TMDB IDs.",
     catalogs : [], // Will be populated dynamically based on Jellyfin collections
@@ -96,7 +96,7 @@ app.get("/:cfg/manifest.json", async (req, res) => {
   mf.id += "." + cfgString.slice(0, 8); 
 
   const serverHostname = (cfg && cfg.serverUrl) ? cfg.serverUrl.replace(/^https?:\/\//, "") : "Unknown Server";
-  mf.name = `StreamBridge: Jellyfin to Stremio (${serverHostname})`;
+  mf.name = `EP-FIN (${serverHostname})`;
   mf.behaviorHints.configurationRequired = false;
   
   // Dynamically fetch Libraries from Jellyfin and create catalogs for each
@@ -233,7 +233,7 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
         if (s.itemId) behaviorHints.bingeGroup = `jellyfin-${s.itemId}`; // Enables auto-play for series
         
         const stream = {
-          name: "StreamBridge",
+          name: "EP-FIN",
           description: s.streamDescription || s.qualityTitle || "Direct Play",
           url: s.directPlayUrl,
           behaviorHints: Object.keys(behaviorHints).length > 0 ? behaviorHints : undefined
@@ -746,7 +746,7 @@ app.use((err, req, res, next) => {
 const HOST = process.env.HOST || '0.0.0.0';
 
 app.listen(PORT, HOST, () => {
-  console.log(`🚀  StreamBridge up at http://${HOST}:${PORT}/<cfg>/manifest.json`);
+  console.log(`🚀  EP-FIN up at http://${HOST}:${PORT}/<cfg>/manifest.json`);
   console.log(`📋  Configure page: http://${HOST}:${PORT}/configure`);
   console.log(`💚  Health check: http://${HOST}:${PORT}/health`);
   console.log(`✅  Server listening on port ${PORT}`);
