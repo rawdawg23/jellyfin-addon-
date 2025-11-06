@@ -1022,8 +1022,51 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         const altParams = { ...baseSeriesParams };
         delete altParams.UserId; // Remove UserId for /Users/{userId}/Items endpoint
         
+        // Try IMDb formats first
         if (imdbId) {
             const formats = [`imdb.${imdbId}`, `Imdb.${imdbId}`, `imdb.${imdbId.replace('tt', '')}`, `Imdb.${imdbId.replace('tt', '')}`];
+            for (const format of formats.slice(0, 2)) { // Only try first 2 formats for speed
+                try {
+                    altParams.AnyProviderIdEquals = format;
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    if (data?.Items?.length > 0) {
+                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                        if (matches.length > 0) {
+                            console.log(`[FIND] ✅ Found via AnyProviderIdEquals=${format}`);
+                            foundItems.push(...matches);
+                            break;
+                        }
+                    }
+                } catch (err) {
+                    console.log(`[FIND] Strategy 2 (${format}) failed: ${err.message}`);
+                }
+            }
+        }
+        
+        // Try TVDB formats (important for TV shows)
+        if (foundItems.length === 0 && tvdbId) {
+            const formats = [`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`, `TVDB.${tvdbId}`];
+            for (const format of formats.slice(0, 2)) { // Only try first 2 formats for speed
+                try {
+                    altParams.AnyProviderIdEquals = format;
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    if (data?.Items?.length > 0) {
+                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                        if (matches.length > 0) {
+                            console.log(`[FIND] ✅ Found via AnyProviderIdEquals=${format}`);
+                            foundItems.push(...matches);
+                            break;
+                        }
+                    }
+                } catch (err) {
+                    console.log(`[FIND] Strategy 2 (${format}) failed: ${err.message}`);
+                }
+            }
+        }
+        
+        // Try TMDb formats
+        if (foundItems.length === 0 && tmdbId) {
+            const formats = [`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`, `TMDB.${tmdbId}`];
             for (const format of formats.slice(0, 2)) { // Only try first 2 formats for speed
                 try {
                     altParams.AnyProviderIdEquals = format;
