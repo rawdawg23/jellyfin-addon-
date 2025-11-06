@@ -758,10 +758,16 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
     console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
     console.log(`[FIND] ==========================================`);
     
-    // FIRST: Search existing cache (if it has items) - FAST PATH
+    // FIRST: Ensure cache is loaded (if empty, load it now)
     const configHash = getConfigHash(config);
+    if (movieCache.items.length === 0 || movieCache.configHash !== configHash) {
+        console.log(`[FIND] Cache is empty or invalid, loading cache first...`);
+        await loadMovieCache(config, false);
+    }
+    
+    // SECOND: Search existing cache - FAST PATH
     if (movieCache.items.length > 0 && movieCache.configHash === configHash) {
-        console.log(`[FIND] Searching existing cache (${movieCache.items.length} movies)...`);
+        console.log(`[FIND] Searching cache (${movieCache.items.length} movies)...`);
         
         let foundItems = [];
         
@@ -815,9 +821,7 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
             }
         }
         
-        console.log(`[FIND] ❌ Not found in cache (${movieCache.items.length} movies indexed), trying direct API search...`);
-    } else {
-        console.log(`[FIND] Cache is empty (${movieCache.items.length} movies), will try direct API search...`);
+        console.log(`[FIND] ❌ Not found in cache (${movieCache.items.length} movies indexed), trying name-based search...`);
     }
     
     // FALLBACK: Direct API search (like original Emby StreamBridge) - FAST, doesn't load all movies
@@ -833,8 +837,9 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
         UserId: config.userId
     };
 
-    // Strategy 1: Direct ID Lookup (/Items)
+    // Strategy 1: Direct ID Lookup (/Users/{userId}/Items) - more reliable than /Items
     const directLookupParams = { ...baseMovieParams };
+    delete directLookupParams.UserId; // Remove UserId for /Users/{userId}/Items endpoint
     let searchedIdField = "";
     if (imdbId) { directLookupParams.ImdbId = imdbId; searchedIdField = "ImdbId"; }
     else if (tmdbId) { directLookupParams.TmdbId = tmdbId; searchedIdField = "TmdbId"; }
@@ -843,13 +848,23 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
     
     if (searchedIdField) {
         try {
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Items`, directLookupParams, config, 10000);
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 10000);
             if (data?.Items?.length > 0) {
+                // CRITICAL: Jellyfin's API ignores search params and returns random items
+                // We MUST filter by ProviderIds to get actual matches
                 const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                 if (matches.length > 0) {
-                    console.log(`[FIND] ✅ Found via /Items with ${searchedIdField}`);
+                    console.log(`[FIND] ✅ Found ${matches.length} match(es) via /Users/{userId}/Items with ${searchedIdField} (filtered from ${data.Items.length} items)`);
                     foundItems.push(...matches);
+                } else {
+                    console.log(`[FIND] ⚠️ Jellyfin returned ${data.Items.length} items but NONE matched ProviderIds (Jellyfin's search is broken)`);
+                    // Log first item's ProviderIds for debugging
+                    if (data.Items[0]?.ProviderIds) {
+                        console.log(`[FIND]   First item ProviderIds:`, JSON.stringify(data.Items[0].ProviderIds));
+                    }
                 }
+            } else {
+                console.log(`[FIND] Strategy 1: Jellyfin returned 0 items (movie may not be in library or search is broken)`);
             }
         } catch (err) {
             console.log(`[FIND] Strategy 1 failed: ${err.message}`);
@@ -860,10 +875,15 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
     if (foundItems.length === 0) {
         const altParams = { ...baseMovieParams };
         delete altParams.UserId; // Remove UserId for /Users/{userId}/Items endpoint
+        delete altParams.ImdbId; // Remove specific ID params when using AnyProviderIdEquals
+        delete altParams.TmdbId;
+        delete altParams.TvdbId;
+        delete altParams.AniDbId;
         
+        // Try IMDb formats first
         if (imdbId) {
             const formats = [`imdb.${imdbId}`, `Imdb.${imdbId}`, `imdb.${imdbId.replace('tt', '')}`, `Imdb.${imdbId.replace('tt', '')}`];
-            for (const format of formats.slice(0, 2)) { // Only try first 2 formats for speed
+            for (const format of formats) { // Try all formats for better matching
                 try {
                     altParams.AnyProviderIdEquals = format;
                     const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
@@ -883,15 +903,90 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
                 }
             }
         }
+        
+        // Try TMDb formats
+        if (foundItems.length === 0 && tmdbId) {
+            const formats = [`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`, `TMDB.${tmdbId}`];
+            for (const format of formats) {
+                try {
+                    altParams.AnyProviderIdEquals = format;
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    if (data?.Items?.length > 0) {
+                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                        if (matches.length > 0) {
+                            console.log(`[FIND] ✅ Found ${matches.length} match(es) via AnyProviderIdEquals=${format} (filtered from ${data.Items.length} items)`);
+                            foundItems.push(...matches);
+                            break;
+                        } else {
+                            console.log(`[FIND] ⚠️ AnyProviderIdEquals=${format} returned ${data.Items.length} items but NONE matched`);
+                        }
+                    }
+                } catch (err) {
+                    console.log(`[FIND] Strategy 2 (${format}) failed: ${err.message}`);
+                }
+            }
+        }
+        
+        // Try TVDB formats
+        if (foundItems.length === 0 && tvdbId) {
+            const formats = [`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`, `TVDB.${tvdbId}`];
+            for (const format of formats) {
+                try {
+                    altParams.AnyProviderIdEquals = format;
+                    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
+                    if (data?.Items?.length > 0) {
+                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                        if (matches.length > 0) {
+                            console.log(`[FIND] ✅ Found ${matches.length} match(es) via AnyProviderIdEquals=${format} (filtered from ${data.Items.length} items)`);
+                            foundItems.push(...matches);
+                            break;
+                        } else {
+                            console.log(`[FIND] ⚠️ AnyProviderIdEquals=${format} returned ${data.Items.length} items but NONE matched`);
+                        }
+                    }
+                } catch (err) {
+                    console.log(`[FIND] Strategy 2 (${format}) failed: ${err.message}`);
+                }
+            }
+        }
+    }
+    
+    // Strategy 3: Search by Name (only if ProviderId searches failed)
+    if (foundItems.length === 0 && movieName) {
+        console.log(`[FIND] Strategy 3: Searching by name "${movieName}"...`);
+        const searchParams = {
+            ...baseMovieParams,
+            SearchTerm: movieName
+        };
+        // Jellyfin's /Users/{userId}/Items endpoint with SearchTerm works better
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, searchParams, config, 10000);
+        if (data?.Items?.length > 0) {
+            // Filter by name and type to ensure relevance
+            const matches = data.Items.filter(item => 
+                item.Name?.toLowerCase() === movieName.toLowerCase() && item.Type === ITEM_TYPE_MOVIE
+            );
+            if (matches.length > 0) {
+                console.log(`[FIND] ✅ Found ${matches.length} match(es) via name search "${movieName}" (filtered from ${data.Items.length} items)`);
+                foundItems.push(...matches);
+            } else {
+                console.log(`[FIND] ⚠️ Name search "${movieName}" returned ${data.Items.length} items but NONE matched exactly`);
+            }
+        } else {
+            console.log(`[FIND] Strategy 3: Name search "${movieName}" returned 0 items`);
+        }
     }
     
     if (foundItems.length === 0) {
-        console.log(`[FIND] ❌ NO MATCH FOUND after direct API search`);
+        console.log(`[FIND] ❌ NO MATCH FOUND after all search strategies`);
     } else {
         console.log(`[FIND] ✅ SUCCESS: Found ${foundItems.length} matching movie(s) via API`);
         foundItems.forEach((item, idx) => {
             console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
         });
+        // Add found items to cache for future searches
+        if (foundItems.length > 0) {
+            addMoviesToCache(foundItems);
+        }
     }
 
     return foundItems;
@@ -928,10 +1023,16 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
     console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
     console.log(`[FIND] ==========================================`);
     
-    // FIRST: Search existing cache (if it has items) - FAST PATH
+    // FIRST: Ensure cache is loaded (if empty, load it now)
     const configHash = getConfigHash(config);
+    if (seriesCache.items.length === 0 || seriesCache.configHash !== configHash) {
+        console.log(`[FIND] Cache is empty or invalid, loading cache first...`);
+        await loadSeriesCache(config, false);
+    }
+    
+    // SECOND: Search existing cache - FAST PATH
     if (seriesCache.items.length > 0 && seriesCache.configHash === configHash) {
-        console.log(`[FIND] Searching existing cache (${seriesCache.items.length} series)...`);
+        console.log(`[FIND] Searching cache (${seriesCache.items.length} series)...`);
         
         let foundItems = [];
         
@@ -985,7 +1086,7 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
             }
         }
         
-        console.log(`[FIND] ❌ Not found in cache, trying direct API search...`);
+        console.log(`[FIND] ❌ Not found in cache (${seriesCache.items.length} series indexed), trying name-based search...`);
     }
     
     // FALLBACK: Direct API search (like original Emby StreamBridge) - FAST, doesn't load all series
@@ -1001,8 +1102,9 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
         UserId: config.userId
     };
 
-    // Strategy 1: Direct ID Lookup (/Items)
+    // Strategy 1: Direct ID Lookup (/Users/{userId}/Items) - more reliable than /Items
     const directLookupParams = { ...baseSeriesParams };
+    delete directLookupParams.UserId; // Remove UserId for /Users/{userId}/Items endpoint
     let searchedIdField = "";
     if (imdbId) { directLookupParams.ImdbId = imdbId; searchedIdField = "ImdbId"; }
     else if (tmdbId) { directLookupParams.TmdbId = tmdbId; searchedIdField = "TmdbId"; }
@@ -1011,13 +1113,13 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
     
     if (searchedIdField) {
         try {
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Items`, directLookupParams, config, 10000);
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 10000);
             if (data?.Items?.length > 0) {
                 // CRITICAL: Jellyfin's API ignores search params and returns random items
                 // We MUST filter by ProviderIds to get actual matches
                 const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                 if (matches.length > 0) {
-                    console.log(`[FIND] ✅ Found via /Items with ${searchedIdField}`);
+                    console.log(`[FIND] ✅ Found ${matches.length} match(es) via /Users/{userId}/Items with ${searchedIdField} (filtered from ${data.Items.length} items)`);
                     foundItems.push(...matches);
                 } else {
                     console.log(`[FIND] ⚠️ Jellyfin returned ${data.Items.length} items but NONE matched ProviderIds (Jellyfin's search is broken)`);
@@ -1038,11 +1140,15 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
     if (foundItems.length === 0) {
         const altParams = { ...baseSeriesParams };
         delete altParams.UserId; // Remove UserId for /Users/{userId}/Items endpoint
+        delete altParams.ImdbId; // Remove specific ID params when using AnyProviderIdEquals
+        delete altParams.TmdbId;
+        delete altParams.TvdbId;
+        delete altParams.AniDbId;
         
         // Try IMDb formats first
         if (imdbId) {
             const formats = [`imdb.${imdbId}`, `Imdb.${imdbId}`, `imdb.${imdbId.replace('tt', '')}`, `Imdb.${imdbId.replace('tt', '')}`];
-            for (const format of formats.slice(0, 2)) { // Only try first 2 formats for speed
+            for (const format of formats) { // Try all formats for better matching
                 try {
                     altParams.AnyProviderIdEquals = format;
                     const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
@@ -1066,7 +1172,7 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
         // Try TVDB formats (important for TV shows)
         if (foundItems.length === 0 && tvdbId) {
             const formats = [`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`, `TVDB.${tvdbId}`];
-            for (const format of formats.slice(0, 2)) { // Only try first 2 formats for speed
+            for (const format of formats) { // Try all formats for better matching
                 try {
                     altParams.AnyProviderIdEquals = format;
                     const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
@@ -1090,7 +1196,7 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
         // Try TMDb formats
         if (foundItems.length === 0 && tmdbId) {
             const formats = [`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`, `TMDB.${tmdbId}`];
-            for (const format of formats.slice(0, 2)) { // Only try first 2 formats for speed
+            for (const format of formats) { // Try all formats for better matching
                 try {
                     altParams.AnyProviderIdEquals = format;
                     const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 10000);
@@ -1112,12 +1218,33 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
         }
     }
     
-    // Strategy 3: If we have a name from Stremio metadata, try searching by name
-    // Note: This requires the name to be passed in, which we don't have in the current function signature
-    // But we can try to get series names from a sample fetch
+    // Strategy 3: Search by Name (only if ProviderId searches failed)
+    if (foundItems.length === 0 && seriesName) {
+        console.log(`[FIND] Strategy 3: Searching by name "${seriesName}"...`);
+        const searchParams = {
+            ...baseSeriesParams,
+            SearchTerm: seriesName
+        };
+        // Jellyfin's /Users/{userId}/Items endpoint with SearchTerm works better
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, searchParams, config, 10000);
+        if (data?.Items?.length > 0) {
+            // Filter by name and type to ensure relevance
+            const matches = data.Items.filter(item => 
+                item.Name?.toLowerCase() === seriesName.toLowerCase() && item.Type === ITEM_TYPE_SERIES
+            );
+            if (matches.length > 0) {
+                console.log(`[FIND] ✅ Found ${matches.length} match(es) via name search "${seriesName}" (filtered from ${data.Items.length} items)`);
+                foundItems.push(...matches);
+            } else {
+                console.log(`[FIND] ⚠️ Name search "${seriesName}" returned ${data.Items.length} items but NONE matched exactly`);
+            }
+        } else {
+            console.log(`[FIND] Strategy 3: Name search "${seriesName}" returned 0 items`);
+        }
+    }
     
     if (foundItems.length === 0) {
-        console.log(`[FIND] ❌ NO MATCH FOUND after direct API search`);
+        console.log(`[FIND] ❌ NO MATCH FOUND after all search strategies`);
         console.log(`[FIND] This could mean:`);
         console.log(`[FIND]   1. The series is not in your Jellyfin library`);
         console.log(`[FIND]   2. The series doesn't have IMDb/TMDb/TVDB IDs in its metadata`);
@@ -1128,6 +1255,10 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
         foundItems.forEach((item, idx) => {
             console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
         });
+        // Add found items to cache for future searches
+        if (foundItems.length > 0) {
+            addSeriesToCache(foundItems);
+        }
     }
 
     return foundItems;
