@@ -841,10 +841,74 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     
     if (foundItems.length === 0) {
         console.log(`[FIND] ==========================================`);
-        console.log(`[FIND] ❌ NO MATCH FOUND in cache`);
+        console.log(`[FIND] ❌ NO MATCH FOUND in cache (${series.length} series)`);
         console.log(`[FIND] Searched for: imdb=${imdbId}, tmdb=${tmdbId}, tvdb=${tvdbId}, anidb=${anidbId}`);
-        console.log(`[FIND] Cache contains ${series.length} series`);
-        console.log(`[FIND] ==========================================`);
+        
+        // Fallback: If cache is small (< 2000) and we have IDs to search, try loading more or doing a direct search
+        if (series.length < 2000 && (imdbId || tmdbId || tvdbId || anidbId)) {
+            console.log(`[FIND] Cache is small (${series.length}), trying to load more series...`);
+            try {
+                // Try to load more series (up to 5000) to find the match
+                const moreParams = {
+                    IncludeItemTypes: ITEM_TYPE_SERIES,
+                    Recursive: true,
+                    Fields: "ProviderIds,Name,Id",
+                    Limit: 5000,
+                    StartIndex: 0,
+                    UserId: config.userId
+                };
+                
+                const moreData = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, moreParams, config, 20000);
+                if (moreData?.Items?.length > 0 && moreData.Items.length > series.length) {
+                    console.log(`[FIND] Loaded ${moreData.Items.length} total series for extended search`);
+                    // Add new series to cache
+                    const newSeries = moreData.Items.filter(s => !seriesCache.indexedById.has(s.Id));
+                    if (newSeries.length > 0) {
+                        addSeriesToCache(newSeries);
+                        // Re-search in expanded cache
+                        const expandedSeries = await loadSeriesCache(config, true); // Force refresh
+                        if (imdbId) {
+                            const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+                            const numericImdb = imdbId.replace('tt', '');
+                            foundItems = [
+                                ...(seriesCache.indexedByImdb.get(imdbKey) || []),
+                                ...(numericImdb ? (seriesCache.indexedByImdb.get(numericImdb) || []) : [])
+                            ];
+                        }
+                        if (foundItems.length === 0 && tmdbId) {
+                            foundItems = seriesCache.indexedByTmdb.get(String(tmdbId)) || [];
+                        }
+                        if (foundItems.length === 0 && tvdbId) {
+                            foundItems = seriesCache.indexedByTvdb.get(String(tvdbId)) || [];
+                        }
+                        if (foundItems.length === 0 && anidbId) {
+                            foundItems = seriesCache.indexedByAnidb.get(String(anidbId)) || [];
+                        }
+                        // Verify matches
+                        if (foundItems.length > 0) {
+                            foundItems = foundItems.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                        }
+                    }
+                }
+            } catch (err) {
+                console.log(`[FIND] Fallback search failed: ${err.message}`);
+            }
+        }
+        
+        if (foundItems.length === 0) {
+            console.log(`[FIND] ==========================================`);
+            console.log(`[FIND] ❌ NO MATCH FOUND after all attempts`);
+            console.log(`[FIND] Cache contains ${seriesCache.items.length} series`);
+            console.log(`[FIND] ==========================================`);
+        } else {
+            console.log(`[FIND] ==========================================`);
+            console.log(`[FIND] ✅ SUCCESS (after fallback): Found ${foundItems.length} matching series`);
+            foundItems.forEach((item, idx) => {
+                console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
+                console.log(`[FIND]   ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
+            });
+            console.log(`[FIND] ==========================================`);
+        }
     } else {
         console.log(`[FIND] ==========================================`);
         console.log(`[FIND] ✅ SUCCESS: Found ${foundItems.length} matching series in cache`);
