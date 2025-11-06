@@ -1377,7 +1377,7 @@ async function getMovies(config) {
             const params = {
                 IncludeItemTypes: ITEM_TYPE_MOVIE,
                 Recursive: true,
-                Fields: "ProviderIds,Name,Id,Overview,ProductionYear,RunTimeTicks,Genres,ImageTags",
+                Fields: DEFAULT_FIELDS, // Include ProviderIds, MediaSources, etc. for streaming
                 Limit: pageSize,
                 StartIndex: startIndex,
                 UserId: userId
