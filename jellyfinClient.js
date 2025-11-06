@@ -27,6 +27,18 @@ const movieCache = {
   configHash: null // Hash of config to detect changes
 };
 
+// --- In-Memory Cache for Series (to bypass Jellyfin's broken search API) ---
+const seriesCache = {
+  items: [], // Array of all series items
+  indexedByImdb: new Map(), // Map<imdbId, Array<items>>
+  indexedByTmdb: new Map(), // Map<tmdbId, Array<items>>
+  indexedByTvdb: new Map(), // Map<tvdbId, Array<items>>
+  indexedByAnidb: new Map(), // Map<anidbId, Array<items>>
+  indexedById: new Map(), // Map<jellyfinId, item>
+  lastUpdated: null,
+  configHash: null // Hash of config to detect changes
+};
+
 /**
  * Creates a hash from config for cache invalidation
  */
@@ -93,6 +105,67 @@ function indexMovies(movies) {
   });
   
   console.log(`[CACHE] Indexed: ${movieCache.indexedByImdb.size} IMDb IDs, ${movieCache.indexedByTmdb.size} TMDb IDs, ${movieCache.indexedByTvdb.size} TVDB IDs, ${movieCache.indexedByAnidb.size} AniDB IDs`);
+}
+
+/**
+ * Indexes series in the cache for fast lookup
+ */
+function indexSeries(series) {
+  console.log(`[CACHE] Indexing ${series.length} series...`);
+  
+  // Clear old indexes
+  seriesCache.indexedByImdb.clear();
+  seriesCache.indexedByTmdb.clear();
+  seriesCache.indexedByTvdb.clear();
+  seriesCache.indexedByAnidb.clear();
+  seriesCache.indexedById.clear();
+  
+  series.forEach(item => {
+    // Index by Jellyfin ID
+    seriesCache.indexedById.set(item.Id, item);
+    
+    // Index by ProviderIds
+    if (item.ProviderIds) {
+      // IMDb
+      if (item.ProviderIds.Imdb || item.ProviderIds.imdb || item.ProviderIds.IMDB) {
+        const imdbId = item.ProviderIds.Imdb || item.ProviderIds.imdb || item.ProviderIds.IMDB;
+        const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+        if (!seriesCache.indexedByImdb.has(imdbKey)) {
+          seriesCache.indexedByImdb.set(imdbKey, []);
+        }
+        seriesCache.indexedByImdb.get(imdbKey).push(item);
+      }
+      
+      // TMDb
+      if (item.ProviderIds.Tmdb || item.ProviderIds.tmdb || item.ProviderIds.TMDB) {
+        const tmdbId = String(item.ProviderIds.Tmdb || item.ProviderIds.tmdb || item.ProviderIds.TMDB);
+        if (!seriesCache.indexedByTmdb.has(tmdbId)) {
+          seriesCache.indexedByTmdb.set(tmdbId, []);
+        }
+        seriesCache.indexedByTmdb.get(tmdbId).push(item);
+      }
+      
+      // TVDB
+      if (item.ProviderIds.Tvdb || item.ProviderIds.tvdb || item.ProviderIds.TVDB) {
+        const tvdbId = String(item.ProviderIds.Tvdb || item.ProviderIds.tvdb || item.ProviderIds.TVDB);
+        if (!seriesCache.indexedByTvdb.has(tvdbId)) {
+          seriesCache.indexedByTvdb.set(tvdbId, []);
+        }
+        seriesCache.indexedByTvdb.get(tvdbId).push(item);
+      }
+      
+      // AniDB
+      if (item.ProviderIds.AniDb || item.ProviderIds.anidb || item.ProviderIds.ANIDB) {
+        const anidbId = String(item.ProviderIds.AniDb || item.ProviderIds.anidb || item.ProviderIds.ANIDB);
+        if (!seriesCache.indexedByAnidb.has(anidbId)) {
+          seriesCache.indexedByAnidb.set(anidbId, []);
+        }
+        seriesCache.indexedByAnidb.get(anidbId).push(item);
+      }
+    }
+  });
+  
+  console.log(`[CACHE] Indexed: ${seriesCache.indexedByImdb.size} IMDb IDs, ${seriesCache.indexedByTmdb.size} TMDb IDs, ${seriesCache.indexedByTvdb.size} TVDB IDs, ${seriesCache.indexedByAnidb.size} AniDB IDs`);
 }
 
 /**
@@ -163,6 +236,76 @@ async function loadMovieCache(config, forceRefresh = false) {
   }
   
   return movieCache.items;
+}
+
+/**
+ * Adds series to cache (called when catalog items are fetched)
+ */
+function addSeriesToCache(series) {
+  if (!series || series.length === 0) return;
+  
+  const newSeries = series.filter(s => {
+    // Only add if not already in cache
+    return !seriesCache.indexedById.has(s.Id);
+  });
+  
+  if (newSeries.length > 0) {
+    console.log(`[CACHE] Adding ${newSeries.length} new series to cache...`);
+    seriesCache.items.push(...newSeries);
+    
+    // Re-index all series
+    indexSeries(seriesCache.items);
+    seriesCache.lastUpdated = Date.now();
+    console.log(`[CACHE] Cache now contains ${seriesCache.items.length} series`);
+  }
+}
+
+/**
+ * Loads series into cache (fetches from Jellyfin if needed, but limits to prevent timeout)
+ */
+async function loadSeriesCache(config, forceRefresh = false) {
+  const configHash = getConfigHash(config);
+  
+  // Check if cache is valid
+  if (!forceRefresh && seriesCache.items.length > 0 && seriesCache.configHash === configHash) {
+    const cacheAge = Date.now() - seriesCache.lastUpdated;
+    const maxAge = 5 * 60 * 1000; // 5 minutes
+    if (cacheAge < maxAge) {
+      console.log(`[CACHE] Using cached series (${Math.floor(cacheAge / 1000)}s old, ${seriesCache.items.length} items)`);
+      return seriesCache.items;
+    }
+  }
+  
+  // If cache is empty or very small, try to load a sample (not all series - too slow!)
+  if (seriesCache.items.length === 0 || seriesCache.items.length < 1000) {
+    console.log(`[CACHE] Cache is empty/small (${seriesCache.items.length} items), loading sample...`);
+    
+    // Fetch only first 1000 series as a sample
+    const sampleSize = 1000;
+    try {
+      const params = {
+        IncludeItemTypes: ITEM_TYPE_SERIES,
+        Recursive: true,
+        Fields: "ProviderIds,Name,Id", // Only need these for series lookup
+        Limit: sampleSize,
+        StartIndex: 0,
+        UserId: config.userId
+      };
+      
+      const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config, 15000);
+      if (data?.Items?.length > 0) {
+        seriesCache.items = data.Items;
+        seriesCache.configHash = configHash;
+        seriesCache.lastUpdated = Date.now();
+        indexSeries(data.Items);
+        console.log(`[CACHE] Loaded sample of ${data.Items.length} series (cache will grow as catalogs are browsed)`);
+      }
+    } catch (err) {
+      console.log(`[CACHE] Failed to load sample: ${err.message}`);
+    }
+  }
+  
+  return seriesCache.items;
 }
 
 // --- Helper Functions ---
@@ -631,55 +774,88 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         config.userId = user.Id;
     }
     
-    let foundSeries = [];
-    const baseSeriesParams = {
-        IncludeItemTypes: ITEM_TYPE_SERIES,
-        Recursive: true,
-        Fields: "ProviderIds,Name,Id", // Only need these fields for series lookup
-        Limit: 5
-    };
-
-    // --- Strategy 1: Direct ID Lookup (/Users/{UserId}/Items) ---
-    const seriesLookupParams1 = { ...baseSeriesParams };
-    if (imdbId) seriesLookupParams1.ImdbId = imdbId;
-    else if (tmdbId) seriesLookupParams1.TmdbId = tmdbId;
-    else if (tvdbId) seriesLookupParams1.TvdbId = tvdbId;
-    else if (anidbId) seriesLookupParams1.AniDbId = anidbId;
-    const data1 = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, seriesLookupParams1, config, 30000);
-    if (data1?.Items?.length > 0) {
-        const matches = data1.Items.filter(s => _isMatchingProviderId(s.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-        if (matches.length > 0) {
-             //console.log(`🔍 Found series via /Users/{UserId}/Items with ImdbId/TmdbId`);
-            foundSeries.push(...matches);
-        }
+    // Debug: Log what we're searching for
+    console.log(`[FIND] ==========================================`);
+    console.log(`[FIND] Searching for series with:`);
+    console.log(`[FIND]   IMDb ID: ${imdbId || 'none'}`);
+    console.log(`[FIND]   TMDB ID: ${tmdbId || 'none'}`);
+    console.log(`[FIND]   TVDB ID: ${tvdbId || 'none'}`);
+    console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
+    console.log(`[FIND] ==========================================`);
+    
+    // NEW APPROACH: Use in-memory cache instead of Jellyfin's broken search API
+    console.log(`[FIND] Loading series cache...`);
+    const series = await loadSeriesCache(config);
+    
+    if (series.length === 0) {
+        console.log(`[FIND] ❌ No series in cache/library`);
+        return [];
     }
-
-    // --- Strategy 2: AnyProviderIdEquals Lookup (/Users/{UserId}/Items) ---
-    if (foundSeries.length === 0) {
-        let anyProviderIdValue = null;
-        if (imdbId) anyProviderIdValue = `imdb.${imdbId}`;
-        else if (tmdbId) anyProviderIdValue = `tmdb.${tmdbId}`;
-        else if (tvdbId) anyProviderIdValue = `tvdb.${tvdbId}`;
-        else if (anidbId) anyProviderIdValue = `anidb.${anidbId}`;
-        if (anyProviderIdValue) {
-            const seriesLookupParams2 = { ...baseSeriesParams, AnyProviderIdEquals: anyProviderIdValue };
-            delete seriesLookupParams2.ImdbId; // Remove specific ID params
-            delete seriesLookupParams2.TmdbId;
-            delete seriesLookupParams2.TvdbId;
-            delete seriesLookupParams2.AniDbId;
-            const data2 = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, seriesLookupParams2, config, 30000);
-            if (data2?.Items?.length > 0) {
-                const matches = data2.Items.filter(s => _isMatchingProviderId(s.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                 if (matches.length > 0) {
-                    //console.log(`🔍 Found series via /Users/{UserId}/Items with AnyProviderIdEquals=${anyProviderIdValue}`);
-                    foundSeries.push(...matches);
-                }
-            }
-        }
+    
+    console.log(`[FIND] Searching cache with ${series.length} series...`);
+    
+    // Search the cache
+    let foundItems = [];
+    
+    // Search by IMDb ID
+    if (imdbId) {
+        const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+        const numericImdb = imdbId.replace('tt', '');
+        
+        const matches1 = seriesCache.indexedByImdb.get(imdbKey) || [];
+        const matches2 = numericImdb ? (seriesCache.indexedByImdb.get(numericImdb) || []) : [];
+        
+        foundItems = [...matches1, ...matches2];
+        console.log(`[FIND] Cache search (IMDb: ${imdbKey}): Found ${foundItems.length} matches`);
     }
-
-    //if (foundSeries.length === 0) console.log(`📭 No Jellyfin series match found for ${imdbId || tmdbId || tvdbId || anidbId}.`);
-    return foundSeries;
+    
+    // Search by TMDb ID
+    if (foundItems.length === 0 && tmdbId) {
+        const tmdbKey = String(tmdbId);
+        foundItems = seriesCache.indexedByTmdb.get(tmdbKey) || [];
+        console.log(`[FIND] Cache search (TMDb: ${tmdbKey}): Found ${foundItems.length} matches`);
+    }
+    
+    // Search by TVDB ID
+    if (foundItems.length === 0 && tvdbId) {
+        const tvdbKey = String(tvdbId);
+        foundItems = seriesCache.indexedByTvdb.get(tvdbKey) || [];
+        console.log(`[FIND] Cache search (TVDB: ${tvdbKey}): Found ${foundItems.length} matches`);
+    }
+    
+    // Search by AniDB ID
+    if (foundItems.length === 0 && anidbId) {
+        const anidbKey = String(anidbId);
+        foundItems = seriesCache.indexedByAnidb.get(anidbKey) || [];
+        console.log(`[FIND] Cache search (AniDB: ${anidbKey}): Found ${foundItems.length} matches`);
+    }
+    
+    // Verify matches still match our criteria (double-check)
+    if (foundItems.length > 0) {
+        const verified = foundItems.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+        if (verified.length < foundItems.length) {
+            console.log(`[FIND] Warning: ${foundItems.length - verified.length} items filtered out during verification`);
+        }
+        foundItems = verified;
+    }
+    
+    if (foundItems.length === 0) {
+        console.log(`[FIND] ==========================================`);
+        console.log(`[FIND] ❌ NO MATCH FOUND in cache`);
+        console.log(`[FIND] Searched for: imdb=${imdbId}, tmdb=${tmdbId}, tvdb=${tvdbId}, anidb=${anidbId}`);
+        console.log(`[FIND] Cache contains ${series.length} series`);
+        console.log(`[FIND] ==========================================`);
+    } else {
+        console.log(`[FIND] ==========================================`);
+        console.log(`[FIND] ✅ SUCCESS: Found ${foundItems.length} matching series in cache`);
+        foundItems.forEach((item, idx) => {
+            console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
+            console.log(`[FIND]   ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
+        });
+        console.log(`[FIND] ==========================================`);
+    }
+    
+    return foundItems;
 }
 
 /**

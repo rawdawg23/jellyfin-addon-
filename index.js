@@ -388,18 +388,23 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
       return res.json({ metas: [] });
     }
 
-    // Add items to cache for fast stream searching
-    if (jellyfin && items.length > 0) {
-      try {
-        // Filter to movies only for cache
-        const movies = items.filter(item => item.Type === 'Movie' || item.Type === 'MusicVideo' || item.Type === 'Video');
-        if (movies.length > 0) {
-          jellyfin.addMoviesToCache(movies);
+        // Add items to cache for fast stream searching
+        if (jellyfin && items.length > 0) {
+          try {
+            // Filter to movies for movie cache
+            const movies = items.filter(item => item.Type === 'Movie' || item.Type === 'MusicVideo' || item.Type === 'Video');
+            if (movies.length > 0) {
+              jellyfin.addMoviesToCache(movies);
+            }
+            // Filter to series for series cache
+            const series = items.filter(item => item.Type === 'Series');
+            if (series.length > 0) {
+              jellyfin.addSeriesToCache(series);
+            }
+          } catch (err) {
+            console.error("[CATALOG] Error adding items to cache:", err.message);
+          }
         }
-      } catch (err) {
-        console.error("[CATALOG] Error adding items to cache:", err.message);
-      }
-    }
 
     // Convert Jellyfin items to Stremio meta format
     let itemsWithIds = 0;
