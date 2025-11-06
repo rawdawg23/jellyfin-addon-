@@ -288,17 +288,30 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
     return res.sendStatus(200);
   }
 
+  // Set timeout to prevent hanging - Stremio needs responses but catalogs can be large
+  let timeoutTriggered = false;
+  const timeout = setTimeout(() => {
+    console.error("[CATALOG] Request timeout");
+    timeoutTriggered = true;
+    if (!res.headersSent) {
+      res.set('Cache-Control', 'no-cache');
+      res.json({ metas: [] });
+    }
+  }, 60000); // 60 second timeout for catalog requests (increased for large libraries)
+
   let cfg;
   try {
     cfg = decodeCfg(req.params.cfg);
   } catch (err) {
     console.error("[CATALOG] Failed to decode config:", err);
+    clearTimeout(timeout);
     return res.json({ metas: [] });
   }
 
   const { type, catalogId, extra } = req.params;
   if (!cfg.serverUrl || !cfg.accessToken) {
     console.error("[CATALOG] Missing configuration (need serverUrl and accessToken)");
+    clearTimeout(timeout);
     return res.json({ metas: [] });
   }
   
@@ -309,13 +322,9 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
 
   if (!jellyfin) {
     console.error("[CATALOG] jellyfinClient not loaded");
+    clearTimeout(timeout);
     return res.json({ metas: [] });
   }
-
-  // Set timeout to prevent hanging
-  const timeout = setTimeout(() => {
-    console.error("[CATALOG] Request timeout");
-  }, 30000); // 30 second timeout
 
   try {
     // Log config info for debugging
@@ -368,11 +377,14 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
       console.log(`[CATALOG] Found ${items.length} ${type} items from collection ${collectionId}`);
     } else {
       console.log(`[CATALOG] Unknown catalog: ${type}/${catalogId}`);
+      clearTimeout(timeout);
       return res.json({ metas: [] });
     }
     
     if (items.length === 0) {
       console.log(`[CATALOG] No items found in Jellyfin library`);
+      clearTimeout(timeout);
+      res.set('Cache-Control', 'no-cache');
       return res.json({ metas: [] });
     }
 
@@ -443,7 +455,10 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
     console.error("[CATALOG] Handler error:", e);
     console.error("[CATALOG] Error stack:", e.stack);
     // Always return valid JSON response
-    res.json({ metas: [] });
+    if (!timeoutTriggered && !res.headersSent) {
+      res.set('Cache-Control', 'no-cache');
+      res.json({ metas: [] });
+    }
   }
 });
 

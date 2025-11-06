@@ -1349,11 +1349,11 @@ async function getMovies(config) {
     
     try {
         const allItems = [];
-        const pageSize = 10000; // Items per page (increased to reduce requests)
+        const pageSize = 500; // Reduced from 10000 to prevent timeouts - fetch in smaller chunks
         let startIndex = 0;
         let hasMore = true;
         
-        console.log(`[GETMOVIES] Starting paginated fetch for movies...`);
+        console.log(`[GETMOVIES] Starting to fetch movies (pageSize: ${pageSize})`);
         
         while (hasMore) {
             const params = {
@@ -1365,7 +1365,8 @@ async function getMovies(config) {
                 UserId: userId
             };
             
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
+            // Use longer timeout (30 seconds) for catalog requests since they can be large
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config, 30000);
             if (!data) {
                 console.error("❌ getMovies: No data returned from Jellyfin API");
                 break;
