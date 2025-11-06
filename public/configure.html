@@ -115,7 +115,6 @@ iframe[id*="kofi-wo-container"] {
 
   <div id="helperOut" class="out" style="display:none">
     <small>User ID</small><pre id="uid"></pre>
-    <small style="margin-top:.6rem;display:block">API Key (Access Token)</small><pre id="tok"></pre>
   </div>
 
   <!--  2· Configure  -->
@@ -179,7 +178,6 @@ $("#helper").addEventListener("submit", async e=>{
     if(!res.ok) throw Error(data.Message||"Auth failed");
 
     $("#uid").textContent = data?.User?.Id || "";
-    $("#tok").textContent = data?.AccessToken || "";
     $("#helperOut").style.display="block";
 
     /* autofill config form only if fields are empty */
