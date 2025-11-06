@@ -151,6 +151,10 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
   }
 
   try {
+    // Log config info for debugging
+    const apiKeyPreview = cfg.accessToken ? 
+      `${cfg.accessToken.substring(0, 10)}...` : 'MISSING';
+    console.log(`[STREAM] Config: Server=${cfg.serverUrl}, UserId=${cfg.userId}, APIKey=${apiKeyPreview}`);
     console.log(`[STREAM] Searching for ${type} with ID: ${id}`);
     const raw = await jellyfin.getStream(id, cfg);
     console.log(`[STREAM] Found ${raw?.length || 0} stream(s) from Jellyfin`);         
@@ -230,6 +234,10 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
   }, 30000); // 30 second timeout
 
   try {
+    // Log config info for debugging
+    const apiKeyPreview = cfg.accessToken ? 
+      `${cfg.accessToken.substring(0, 10)}...` : 'MISSING';
+    console.log(`[CATALOG] Config: Server=${cfg.serverUrl}, UserId=${cfg.userId}, APIKey=${apiKeyPreview}`);
     console.log(`[CATALOG] Request for ${type}/${catalogId}${extra ? `/${extra}` : ''}`);
     let items = [];
     

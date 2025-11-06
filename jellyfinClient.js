@@ -152,6 +152,11 @@ function parseMediaId(idOrExternalId) {
  */
 async function makeJellyfinApiRequest(url, params = {}, config) {
     try {
+        // Log API key info (first 10 chars only for security)
+        const apiKeyPreview = config.accessToken ? 
+            `${config.accessToken.substring(0, 10)}...` : 'MISSING';
+        console.log(`[API] Request to ${url.split('?')[0]} with API key: ${apiKeyPreview}`);
+        
         const response = await axios({
             method: 'get',
             url: url,
@@ -164,7 +169,11 @@ async function makeJellyfinApiRequest(url, params = {}, config) {
         console.warn(`⚠️ API Request failed for ${url} with params ${JSON.stringify(params)}:`, err.message);
         
         if (err.response?.status === 401) {
-             console.log("🔧 Detected Unauthorized (401). The provided access token might be invalid or expired.");
+            const apiKeyPreview = config.accessToken ? 
+                `${config.accessToken.substring(0, 10)}...` : 'MISSING';
+            console.log(`🔧 Detected Unauthorized (401). API key used: ${apiKeyPreview}`);
+            console.log(`🔧 Server: ${config.serverUrl}, UserId: ${config.userId}`);
+            console.log(`🔧 Full error response:`, err.response?.data);
         }
         return null; // Indicate failure
     }
