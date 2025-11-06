@@ -501,6 +501,18 @@ app.get("/health", (_req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
+// LOGO route - serve logo image (avoids binary file issues in Hugging Face)
+// ──────────────────────────────────────────────────────────────────────────
+app.get("/logo.png", (req, res) => {
+  const logoPath = path.join(__dirname, "public", "logo.png");
+  if (fs.existsSync(logoPath)) {
+    res.sendFile(logoPath);
+  } else {
+    res.status(404).json({ error: "Logo not found" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────
 // TEST endpoint  →  /test-search?cfg=<base64config>&imdbId=tt0147800
 // ──────────────────────────────────────────────────────────────────────────
 app.get("/test-search", async (req, res) => {
