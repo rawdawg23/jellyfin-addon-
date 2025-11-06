@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jellyfin Search API Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        h1 {
+            color: #fff;
+            border-bottom: 2px solid #4a9eff;
+            padding-bottom: 10px;
+        }
+        .config-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #b0b0b0;
+            font-weight: 500;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+        button {
+            background: #4a9eff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        button:hover {
+            background: #3a8eef;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .test-result {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #4a9eff;
+        }
+        .test-result h3 {
+            margin-top: 0;
+            color: #4a9eff;
+        }
+        .test-result.success {
+            border-left-color: #4caf50;
+        }
+        .test-result.error {
+            border-left-color: #f44336;
+        }
+        .item {
+            background: #1a1a1a;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .item strong {
+            color: #4a9eff;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #4a9eff;
+        }
+        pre {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Jellyfin Search API Test</h1>
+    
+    <div class="config-section">
+        <h2>Configuration</h2>
+        <div class="form-group">
+            <label>Server URL:</label>
+            <input type="text" id="serverUrl" placeholder="https://your-server.com" value="https://ku98faa.freshticks.xyz:443">
+        </div>
+        <div class="form-group">
+            <label>API Key:</label>
+            <input type="text" id="apiKey" placeholder="Your Jellyfin API Key">
+        </div>
+        <div class="form-group">
+            <label>User ID (optional - will auto-detect):</label>
+            <input type="text" id="userId" placeholder="Leave empty to auto-detect">
+        </div>
+        <div class="form-group">
+            <label>Test IMDb ID:</label>
+            <input type="text" id="imdbId" placeholder="tt0147800" value="tt0147800">
+        </div>
+        <button id="runTest" onclick="runTest()">Run Search Tests</button>
+    </div>
+
+    <div id="results" class="results"></div>
+
+    <script>
+        async function runTest() {
+            const serverUrl = document.getElementById('serverUrl').value.trim();
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const userId = document.getElementById('userId').value.trim();
+            const imdbId = document.getElementById('imdbId').value.trim() || 'tt0147800';
+            
+            if (!serverUrl || !apiKey) {
+                alert('Please fill in Server URL and API Key');
+                return;
+            }
+
+            const button = document.getElementById('runTest');
+            button.disabled = true;
+            button.textContent = 'Running Tests...';
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">⏳ Running tests...</div>';
+
+            // Create config object
+            const config = {
+                serverUrl: serverUrl.replace(/\/+$/, ''),
+                accessToken: apiKey,
+                userId: userId || undefined
+            };
+
+            // Convert to base64url
+            const cfgStr = Buffer.from(JSON.stringify(config)).toString('base64url');
+
+            // Call test endpoint
+            try {
+                const baseUrl = window.location.origin;
+                const testUrl = `${baseUrl}/test-search?cfg=${cfgStr}&imdbId=${imdbId}`;
+                
+                const response = await fetch(testUrl);
+                const data = await response.json();
+
+                displayResults(data);
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <div class="test-result error">
+                        <h3>❌ Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Run Search Tests';
+            }
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            let html = '<h2>Test Results</h2>';
+            
+            html += `<div class="test-result">
+                <h3>Configuration</h3>
+                <p><strong>Server:</strong> ${data.config.serverUrl}</p>
+                <p><strong>User ID:</strong> ${data.config.userId}</p>
+                <p><strong>API Key:</strong> ${data.config.apiKeyPreview}</p>
+                <p><strong>Test IMDb ID:</strong> ${data.testImdbId}</p>
+            </div>`;
+
+            data.tests.forEach((test, idx) => {
+                const isSuccess = !test.error && test.itemsCount > 0;
+                const className = test.error ? 'error' : (isSuccess ? 'success' : '');
+                
+                html += `<div class="test-result ${className}">`;
+                html += `<h3>${idx + 1}. ${test.name}</h3>`;
+                
+                if (test.error) {
+                    html += `<p><strong>Error:</strong> ${test.error}</p>`;
+                    if (test.status) {
+                        html += `<p><strong>HTTP Status:</strong> ${test.status}</p>`;
+                    }
+                } else {
+                    html += `<p><strong>HTTP Status:</strong> ${test.status}</p>`;
+                    html += `<p><strong>Items Returned:</strong> ${test.itemsCount}</p>`;
+                    
+                    if (test.items && test.items.length > 0) {
+                        html += `<h4>Sample Items:</h4>`;
+                        test.items.forEach((item, itemIdx) => {
+                            html += `<div class="item">`;
+                            html += `<strong>Item ${itemIdx + 1}:</strong> "${item.name}"<br>`;
+                            html += `<strong>ID:</strong> ${item.id}<br>`;
+                            html += `<strong>ProviderIds:</strong> <pre>${JSON.stringify(item.providerIds, null, 2)}</pre>`;
+                            html += `</div>`;
+                        });
+                    } else {
+                        html += `<p>⚠️ No items returned</p>`;
+                    }
+                }
+                
+                html += `</div>`;
+            });
+
+            resultsDiv.innerHTML = html;
+        }
+
+        // Auto-fill from URL if available
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('cfg')) {
+                try {
+                    const cfgJson = JSON.parse(Buffer.from(params.get('cfg'), 'base64url').toString('utf8'));
+                    if (cfgJson.serverUrl) document.getElementById('serverUrl').value = cfgJson.serverUrl;
+                    if (cfgJson.accessToken) document.getElementById('apiKey').value = cfgJson.accessToken;
+                    if (cfgJson.userId) document.getElementById('userId').value = cfgJson.userId;
+                } catch (e) {
+                    console.error('Failed to parse config from URL:', e);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+
