@@ -735,9 +735,10 @@ async function makeJellyfinApiRequest(url, params = {}, config, timeoutMs = 5000
  * @param {string|null} tvdbId - The TVDB ID to search for.
  * @param {string|null} anidbId - The AniDB ID to search for.
  * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
+ * @param {string|null} [movieName] - Optional: The name of the movie for name-based search fallback.
  * @returns {Promise<object|null>} The found Jellyfin movie item or null.
  */
-async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
+async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName = null) {
     // Auto-fetch User ID if not provided
     if (!config.userId) {
         const user = await getCurrentUser(config);
@@ -904,9 +905,10 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
  * @param {string|null} tvdbId - The TVDB ID of the series.
  * @param {string|null} anidbId - The AniDB ID of the series.
  * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
+ * @param {string|null} [seriesName] - Optional: The name of the series for name-based search fallback.
  * @returns {Promise<object|null>} The found Jellyfin series item or null.
  */
-async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
+async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesName = null) {
     // Auto-fetch User ID if not provided
     if (!config.userId) {
         const user = await getCurrentUser(config);
@@ -1109,6 +1111,10 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             }
         }
     }
+    
+    // Strategy 3: If we have a name from Stremio metadata, try searching by name
+    // Note: This requires the name to be passed in, which we don't have in the current function signature
+    // But we can try to get series names from a sample fetch
     
     if (foundItems.length === 0) {
         console.log(`[FIND] ❌ NO MATCH FOUND after direct API search`);
