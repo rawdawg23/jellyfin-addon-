@@ -174,6 +174,16 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
 //     Also supports: /<cfg>/catalog/<type>/<catalogId>/<extra>.json
 // ──────────────────────────────────────────────────────────────────────────
 app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/:extra.json"], async (req, res) => {
+  // Set CORS headers explicitly
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  
+  // Handle OPTIONS preflight
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+
   let cfg;
   try {
     cfg = decodeCfg(req.params.cfg);
@@ -184,13 +194,19 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
 
   const { type, catalogId, extra } = req.params;
   if (!cfg.serverUrl || !cfg.userId || !cfg.accessToken) {
+    console.error("[CATALOG] Missing configuration");
     return res.json({ metas: [] });
   }
 
   if (!jellyfin) {
-    console.error("jellyfinClient not loaded");
+    console.error("[CATALOG] jellyfinClient not loaded");
     return res.json({ metas: [] });
   }
+
+  // Set timeout to prevent hanging
+  const timeout = setTimeout(() => {
+    console.error("[CATALOG] Request timeout");
+  }, 30000); // 30 second timeout
 
   try {
     console.log(`[CATALOG] Request for ${type}/${catalogId}${extra ? `/${extra}` : ''}`);
@@ -276,9 +292,13 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
     
     // Cache catalog for 1 hour
     res.set('Cache-Control', 'public, max-age=3600');
+    clearTimeout(timeout);
     res.json({ metas });
   } catch (e) {
-    console.error("Catalog handler error:", e);
+    clearTimeout(timeout);
+    console.error("[CATALOG] Handler error:", e);
+    console.error("[CATALOG] Error stack:", e.stack);
+    // Always return valid JSON response
     res.json({ metas: [] });
   }
 });
