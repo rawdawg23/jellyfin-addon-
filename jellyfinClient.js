@@ -1213,20 +1213,46 @@ async function getMovies(config) {
     }
     
     try {
-        const params = {
-            IncludeItemTypes: ITEM_TYPE_MOVIE,
-            Recursive: true,
-            Fields: "ProviderIds,Name,Id,Overview,ProductionYear,RunTimeTicks,Genres,ImageTags",
-            Limit: 1000,
-            UserId: userId
-        };
+        const allItems = [];
+        const pageSize = 1000; // Items per page
+        let startIndex = 0;
+        let hasMore = true;
         
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
-        if (!data) {
-            console.error("❌ getMovies: No data returned from Jellyfin API");
-            return [];
+        console.log(`[GETMOVIES] Starting paginated fetch for movies...`);
+        
+        while (hasMore) {
+            const params = {
+                IncludeItemTypes: ITEM_TYPE_MOVIE,
+                Recursive: true,
+                Fields: "ProviderIds,Name,Id,Overview,ProductionYear,RunTimeTicks,Genres,ImageTags",
+                Limit: pageSize,
+                StartIndex: startIndex,
+                UserId: userId
+            };
+            
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
+            if (!data) {
+                console.error("❌ getMovies: No data returned from Jellyfin API");
+                break;
+            }
+            
+            const items = data.Items || [];
+            const totalRecords = data.TotalRecordCount || 0;
+            
+            console.log(`[GETMOVIES] Fetched page ${Math.floor(startIndex / pageSize) + 1}: ${items.length} items (Total: ${totalRecords})`);
+            
+            allItems.push(...items);
+            
+            // Check if we've fetched all items
+            if (items.length < pageSize || allItems.length >= totalRecords) {
+                hasMore = false;
+            } else {
+                startIndex += pageSize;
+            }
         }
-        return data.Items || [];
+        
+        console.log(`[GETMOVIES] Total movies fetched: ${allItems.length}`);
+        return allItems;
     } catch (err) {
         console.error("❌ getMovies error:", err.message);
         return [];
@@ -1256,20 +1282,46 @@ async function getSeries(config) {
     }
     
     try {
-        const params = {
-            IncludeItemTypes: ITEM_TYPE_SERIES,
-            Recursive: true,
-            Fields: "ProviderIds,Name,Id,Overview,ProductionYear,Genres,ImageTags",
-            Limit: 1000,
-            UserId: userId
-        };
+        const allItems = [];
+        const pageSize = 1000; // Items per page
+        let startIndex = 0;
+        let hasMore = true;
         
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
-        if (!data) {
-            console.error("❌ getSeries: No data returned from Jellyfin API");
-            return [];
+        console.log(`[GETSERIES] Starting paginated fetch for series...`);
+        
+        while (hasMore) {
+            const params = {
+                IncludeItemTypes: ITEM_TYPE_SERIES,
+                Recursive: true,
+                Fields: "ProviderIds,Name,Id,Overview,ProductionYear,Genres,ImageTags",
+                Limit: pageSize,
+                StartIndex: startIndex,
+                UserId: userId
+            };
+            
+            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
+            if (!data) {
+                console.error("❌ getSeries: No data returned from Jellyfin API");
+                break;
+            }
+            
+            const items = data.Items || [];
+            const totalRecords = data.TotalRecordCount || 0;
+            
+            console.log(`[GETSERIES] Fetched page ${Math.floor(startIndex / pageSize) + 1}: ${items.length} items (Total: ${totalRecords})`);
+            
+            allItems.push(...items);
+            
+            // Check if we've fetched all items
+            if (items.length < pageSize || allItems.length >= totalRecords) {
+                hasMore = false;
+            } else {
+                startIndex += pageSize;
+            }
         }
-        return data.Items || [];
+        
+        console.log(`[GETSERIES] Total series fetched: ${allItems.length}`);
+        return allItems;
     } catch (err) {
         console.error("❌ getSeries error:", err.message);
         return [];
