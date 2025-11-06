@@ -499,8 +499,11 @@ app.get("/test-search", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  console.log('[TEST-SEARCH] Request received');
+
   const cfgStr = req.query.cfg;
   if (!cfgStr) {
+    console.log('[TEST-SEARCH] Missing cfg parameter');
     return res.status(400).json({ error: "Missing cfg parameter" });
   }
 
@@ -510,11 +513,15 @@ app.get("/test-search", async (req, res) => {
     if (cfg.serverUrl) {
       cfg.serverUrl = cfg.serverUrl.replace(/\/+$/, '');
     }
+    console.log('[TEST-SEARCH] Config parsed:', { serverUrl: cfg.serverUrl, userId: cfg.userId || 'auto-detect' });
   } catch (err) {
-    return res.status(400).json({ error: "Invalid cfg parameter" });
+    console.log('[TEST-SEARCH] Error parsing cfg:', err.message);
+    return res.status(400).json({ error: "Invalid cfg parameter: " + err.message });
   }
 
   const testImdbId = req.query.imdbId || 'tt0147800';
+  console.log('[TEST-SEARCH] Testing with IMDb ID:', testImdbId);
+  
   const results = {
     config: {
       serverUrl: cfg.serverUrl,
@@ -526,6 +533,7 @@ app.get("/test-search", async (req, res) => {
   };
 
   if (!jellyfin) {
+    console.log('[TEST-SEARCH] Error: jellyfinClient not loaded');
     return res.status(500).json({ error: "jellyfinClient not loaded", results });
   }
 

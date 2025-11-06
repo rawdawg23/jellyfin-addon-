@@ -156,23 +156,50 @@
                 userId: userId || undefined
             };
 
-            // Convert to base64url
-            const cfgStr = Buffer.from(JSON.stringify(config)).toString('base64url');
+            // Convert to base64url (browser-compatible)
+            // First convert to base64, then convert base64url-safe characters
+            const jsonStr = JSON.stringify(config);
+            const base64 = btoa(unescape(encodeURIComponent(jsonStr)));
+            const cfgStr = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 
             // Call test endpoint
             try {
                 const baseUrl = window.location.origin;
                 const testUrl = `${baseUrl}/test-search?cfg=${cfgStr}&imdbId=${imdbId}`;
                 
-                const response = await fetch(testUrl);
+                console.log('Fetching:', testUrl);
+                
+                // Add timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+                
+                const response = await fetch(testUrl, { 
+                    signal: controller.signal 
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
                 const data = await response.json();
+                console.log('Results:', data);
 
                 displayResults(data);
             } catch (error) {
+                console.error('Test error:', error);
+                let errorMsg = error.message;
+                if (error.name === 'AbortError') {
+                    errorMsg = 'Request timed out after 60 seconds';
+                }
                 resultsDiv.innerHTML = `
                     <div class="test-result error">
                         <h3>❌ Error</h3>
-                        <p>${error.message}</p>
+                        <p><strong>${errorMsg}</strong></p>
+                        <p>Check the browser console (F12) for more details.</p>
+                        <p>Make sure the server is running and the /test-search endpoint is accessible.</p>
                     </div>
                 `;
             } finally {
