@@ -293,6 +293,15 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         config.userId = user.Id;
     }
     
+    // Debug: Log what we're searching for
+    console.log(`[FIND] ==========================================`);
+    console.log(`[FIND] Searching for movie with:`);
+    console.log(`[FIND]   IMDb ID: ${imdbId || 'none'}`);
+    console.log(`[FIND]   TMDB ID: ${tmdbId || 'none'}`);
+    console.log(`[FIND]   TVDB ID: ${tvdbId || 'none'}`);
+    console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
+    console.log(`[FIND] ==========================================`);
+    
     let foundItems = [];
     const baseMovieParams = {
         IncludeItemTypes: ITEM_TYPE_MOVIE,
@@ -318,12 +327,31 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     directLookupParams.Limit = 10;
     
     if (searchedIdField) {
+        console.log(`[FIND] Strategy 1: Setting up parallel search with ${searchedIdField}=${directLookupParams[searchedIdField]}`);
         searchPromises.push(
             makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config)
                 .then(data => {
+                    console.log(`[FIND] Strategy 1: Received ${data?.Items?.length || 0} items from API`);
                     if (data?.Items?.length > 0) {
-                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                        return matches.length > 0 ? matches : null;
+                        // Debug: Show ProviderIds of first few items
+                        data.Items.slice(0, 3).forEach((item, idx) => {
+                            console.log(`[FIND] Strategy 1: Item ${idx + 1} "${item.Name}" has ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
+                        });
+                        
+                        const matches = data.Items.filter(i => {
+                            const isMatch = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                            if (!isMatch && data.Items.indexOf(i) < 3) {
+                                console.log(`[FIND] Strategy 1: Item "${i.Name}" did NOT match. Looking for: imdb=${imdbId}, tmdb=${tmdbId}`);
+                            }
+                            return isMatch;
+                        });
+                        
+                        console.log(`[FIND] Strategy 1: Found ${matches.length} matching item(s) after filtering`);
+                        if (matches.length > 0) {
+                            console.log(`[FIND] Strategy 1: ✅ MATCH FOUND: "${matches[0].Name}"`);
+                            return matches;
+                        }
+                        return null;
                     }
                     return null;
                 })
@@ -353,6 +381,7 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     
     // Only try first 2 formats in parallel to avoid too many simultaneous requests
     for (const attemptFormat of anyProviderIdFormats.slice(0, 2)) {
+        console.log(`[FIND] Strategy 2: Setting up parallel search with AnyProviderIdEquals=${attemptFormat}`);
         const altParams = { ...baseMovieParams, AnyProviderIdEquals: attemptFormat };
         delete altParams.ImdbId;
         delete altParams.TmdbId;
@@ -364,9 +393,27 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         searchPromises.push(
             makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config)
                 .then(data => {
+                    console.log(`[FIND] Strategy 2 (${attemptFormat}): Received ${data?.Items?.length || 0} items from API`);
                     if (data?.Items?.length > 0) {
-                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                        return matches.length > 0 ? matches : null;
+                        // Debug: Show ProviderIds of first few items
+                        data.Items.slice(0, 3).forEach((item, idx) => {
+                            console.log(`[FIND] Strategy 2 (${attemptFormat}): Item ${idx + 1} "${item.Name}" has ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
+                        });
+                        
+                        const matches = data.Items.filter(i => {
+                            const isMatch = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                            if (!isMatch && data.Items.indexOf(i) < 3) {
+                                console.log(`[FIND] Strategy 2 (${attemptFormat}): Item "${i.Name}" did NOT match. Looking for: imdb=${imdbId}, tmdb=${tmdbId}`);
+                            }
+                            return isMatch;
+                        });
+                        
+                        console.log(`[FIND] Strategy 2 (${attemptFormat}): Found ${matches.length} matching item(s) after filtering`);
+                        if (matches.length > 0) {
+                            console.log(`[FIND] Strategy 2 (${attemptFormat}): ✅ MATCH FOUND: "${matches[0].Name}"`);
+                            return matches;
+                        }
+                        return null;
                     }
                     return null;
                 })
@@ -379,18 +426,31 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     
     // Wait for first successful result
     if (searchPromises.length > 0) {
+        console.log(`[FIND] Running ${searchPromises.length} parallel searches...`);
+        const startTime = Date.now();
         const results = await Promise.allSettled(searchPromises);
-        for (const result of results) {
+        const elapsed = Date.now() - startTime;
+        console.log(`[FIND] Parallel searches completed in ${elapsed}ms`);
+        
+        for (let i = 0; i < results.length; i++) {
+            const result = results[i];
             if (result.status === 'fulfilled' && result.value) {
+                console.log(`[FIND] ✅ Parallel search ${i + 1} succeeded with ${result.value.length} match(es)`);
                 foundItems.push(...result.value);
                 break; // Found match, stop
+            } else if (result.status === 'rejected') {
+                console.log(`[FIND] ❌ Parallel search ${i + 1} rejected: ${result.reason?.message || 'unknown error'}`);
+            } else {
+                console.log(`[FIND] ⚠️ Parallel search ${i + 1} returned null (no match)`);
             }
         }
     }
     
     // If still no results and we have more formats to try, try them sequentially
     if (foundItems.length === 0 && anyProviderIdFormats.length > 2) {
+        console.log(`[FIND] No matches in parallel searches, trying ${anyProviderIdFormats.length - 2} remaining formats sequentially...`);
         for (const attemptFormat of anyProviderIdFormats.slice(2)) {
+            console.log(`[FIND] Strategy 2: Trying sequential format ${attemptFormat}`);
             const altParams = { ...baseMovieParams, AnyProviderIdEquals: attemptFormat };
             delete altParams.ImdbId;
             delete altParams.TmdbId;
@@ -401,9 +461,24 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             
             try {
                 const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config);
+                console.log(`[FIND] Strategy 2 (${attemptFormat}): Received ${data?.Items?.length || 0} items from API`);
                 if (data?.Items?.length > 0) {
-                    const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                    // Debug: Show ProviderIds of first few items
+                    data.Items.slice(0, 3).forEach((item, idx) => {
+                        console.log(`[FIND] Strategy 2 (${attemptFormat}): Item ${idx + 1} "${item.Name}" has ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
+                    });
+                    
+                    const matches = data.Items.filter(i => {
+                        const isMatch = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                        if (!isMatch && data.Items.indexOf(i) < 3) {
+                            console.log(`[FIND] Strategy 2 (${attemptFormat}): Item "${i.Name}" did NOT match. Looking for: imdb=${imdbId}, tmdb=${tmdbId}`);
+                        }
+                        return isMatch;
+                    });
+                    
+                    console.log(`[FIND] Strategy 2 (${attemptFormat}): Found ${matches.length} matching item(s) after filtering`);
                     if (matches.length > 0) {
+                        console.log(`[FIND] Strategy 2 (${attemptFormat}): ✅ MATCH FOUND: "${matches[0].Name}"`);
                         foundItems.push(...matches);
                         break;
                     }
@@ -413,6 +488,21 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
                 continue;
             }
         }
+    }
+
+    if (foundItems.length === 0) {
+        console.log(`[FIND] ==========================================`);
+        console.log(`[FIND] ❌ NO MATCH FOUND after all strategies`);
+        console.log(`[FIND] Searched for: imdb=${imdbId}, tmdb=${tmdbId}, tvdb=${tvdbId}, anidb=${anidbId}`);
+        console.log(`[FIND] ==========================================`);
+    } else {
+        console.log(`[FIND] ==========================================`);
+        console.log(`[FIND] ✅ SUCCESS: Found ${foundItems.length} matching movie(s)`);
+        foundItems.forEach((item, idx) => {
+            console.log(`[FIND]   Match ${idx + 1}: "${item.Name}" (ID: ${item.Id})`);
+            console.log(`[FIND]   ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
+        });
+        console.log(`[FIND] ==========================================`);
     }
 
     return foundItems; // Return foundItems if found after all attempts
