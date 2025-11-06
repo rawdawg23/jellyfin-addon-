@@ -758,14 +758,8 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
     console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
     console.log(`[FIND] ==========================================`);
     
-    // FIRST: Ensure cache is loaded (if empty, load it now)
+    // FIRST: Search existing cache if available - FAST PATH
     const configHash = getConfigHash(config);
-    if (movieCache.items.length === 0 || movieCache.configHash !== configHash) {
-        console.log(`[FIND] Cache is empty or invalid, loading cache first...`);
-        await loadMovieCache(config, false);
-    }
-    
-    // SECOND: Search existing cache - FAST PATH
     if (movieCache.items.length > 0 && movieCache.configHash === configHash) {
         console.log(`[FIND] Searching cache (${movieCache.items.length} movies)...`);
         
@@ -821,7 +815,9 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config, movieName 
             }
         }
         
-        console.log(`[FIND] ❌ Not found in cache (${movieCache.items.length} movies indexed), trying name-based search...`);
+        console.log(`[FIND] ❌ Not found in cache (${movieCache.items.length} movies indexed), trying direct API search...`);
+    } else {
+        console.log(`[FIND] Cache is empty, skipping cache load and trying direct API search (fast)...`);
     }
     
     // FALLBACK: Direct API search (like original Emby StreamBridge) - FAST, doesn't load all movies
@@ -1023,14 +1019,8 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
     console.log(`[FIND]   AniDB ID: ${anidbId || 'none'}`);
     console.log(`[FIND] ==========================================`);
     
-    // FIRST: Ensure cache is loaded (if empty, load it now)
+    // FIRST: Search existing cache if available - FAST PATH
     const configHash = getConfigHash(config);
-    if (seriesCache.items.length === 0 || seriesCache.configHash !== configHash) {
-        console.log(`[FIND] Cache is empty or invalid, loading cache first...`);
-        await loadSeriesCache(config, false);
-    }
-    
-    // SECOND: Search existing cache - FAST PATH
     if (seriesCache.items.length > 0 && seriesCache.configHash === configHash) {
         console.log(`[FIND] Searching cache (${seriesCache.items.length} series)...`);
         
@@ -1086,7 +1076,9 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config, seriesNam
             }
         }
         
-        console.log(`[FIND] ❌ Not found in cache (${seriesCache.items.length} series indexed), trying name-based search...`);
+        console.log(`[FIND] ❌ Not found in cache (${seriesCache.items.length} series indexed), trying direct API search...`);
+    } else {
+        console.log(`[FIND] Cache is empty, skipping cache load and trying direct API search (fast)...`);
     }
     
     // FALLBACK: Direct API search (like original Emby StreamBridge) - FAST, doesn't load all series
