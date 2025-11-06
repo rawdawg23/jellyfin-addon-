@@ -993,8 +993,9 @@ async function getPlaybackStreams(jellyfinItem, seriesName = null, config) {
           qualityTitle = qualityTitle || 'Direct Play'; // Fallback title
 
             // Construct direct play URL with authentication
-            // Use both api_key query param and ensure UserId is included for Jellyfin
-            const directPlayUrl = `${config.serverUrl}/Videos/${jellyfinItem.Id}/stream?MediaSourceId=${source.Id}&Static=true&api_key=${config.accessToken}&UserId=${config.userId}&DeviceId=stremio-addon-device-id`;
+            // Include UserId for Jellyfin compatibility and ensure proper authentication
+            const container = source.Container || 'mkv'; // Fallback to mkv if no container
+            const directPlayUrl = `${config.serverUrl}/Videos/${jellyfinItem.Id}/stream.${container}?MediaSourceId=${source.Id}&Static=true&api_key=${config.accessToken}&UserId=${config.userId}&DeviceId=stremio-addon-device-id`;
             
             // Format subtitles for Stremio
             const subtitles = subtitleStreams.map(sub => {
