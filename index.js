@@ -166,21 +166,26 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
     const streams = (raw || [])
       .filter(s => s.directPlayUrl)
       .map(s => {
-        // Build behaviorHints with enriched data
-        const behaviorHints = {
-          filename: s.mediaInfo?.filename ?? undefined,
-          videoSize: s.mediaInfo?.size ?? undefined,
-          notWebReady: true, // Default to true for safety
-          bingeGroup: `jellyfin-${s.itemId}` // Enables auto-play for series episodes
+        // Build behaviorHints with enriched data (matching Stremio/StreamBridge format)
+        const behaviorHints = {};
+        if (s.mediaInfo?.filename) behaviorHints.filename = s.mediaInfo.filename;
+        if (s.mediaInfo?.size) behaviorHints.videoSize = s.mediaInfo.size;
+        behaviorHints.notWebReady = true; // Direct play URLs need this
+        if (s.itemId) behaviorHints.bingeGroup = `jellyfin-${s.itemId}`; // Enables auto-play for series
+        
+        const stream = {
+          name: "Jellyfin",
+          description: s.streamDescription || s.qualityTitle || "Direct Play",
+          url: s.directPlayUrl,
+          behaviorHints: Object.keys(behaviorHints).length > 0 ? behaviorHints : undefined
         };
         
-        return {
-          name: "Jellyfin", // Simple consistent name for all streams
-          description: s.streamDescription || s.qualityTitle || "Direct Play", // Full detailed technical information
-          url: s.directPlayUrl,
-          behaviorHints: behaviorHints,
-          subtitles: s.subtitles || [] // Include subtitles if available
-        };
+        // Only add subtitles if they exist
+        if (s.subtitles && s.subtitles.length > 0) {
+          stream.subtitles = s.subtitles;
+        }
+        
+        return stream;
       });
     // Set cache based on whether streams were found
     if (streams.length > 0) {
