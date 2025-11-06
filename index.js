@@ -171,16 +171,18 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────────────────
 // CATALOG route  →  /<cfg>/catalog/<type>/<catalogId>.json
+//     Also supports: /<cfg>/catalog/<type>/<catalogId>/<extra>.json
 // ──────────────────────────────────────────────────────────────────────────
-app.get("/:cfg/catalog/:type/:catalogId.json", async (req, res) => {
+app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/:extra.json"], async (req, res) => {
   let cfg;
   try {
     cfg = decodeCfg(req.params.cfg);
-  } catch {
+  } catch (err) {
+    console.error("[CATALOG] Failed to decode config:", err);
     return res.json({ metas: [] });
   }
 
-  const { type, catalogId } = req.params;
+  const { type, catalogId, extra } = req.params;
   if (!cfg.serverUrl || !cfg.userId || !cfg.accessToken) {
     return res.json({ metas: [] });
   }
@@ -191,31 +193,43 @@ app.get("/:cfg/catalog/:type/:catalogId.json", async (req, res) => {
   }
 
   try {
-    console.log(`[CATALOG] Request for ${type}/${catalogId}`);
+    console.log(`[CATALOG] Request for ${type}/${catalogId}${extra ? `/${extra}` : ''}`);
     let items = [];
     
     if (type === "movie" && catalogId === "jellyfin-movies") {
       console.log(`[CATALOG] Fetching movies from Jellyfin...`);
       items = await jellyfin.getMovies(cfg) || [];
-      console.log(`[CATALOG] Found ${items.length} movies`);
+      console.log(`[CATALOG] Found ${items.length} movies from Jellyfin`);
     } else if (type === "series" && catalogId === "jellyfin-series") {
       console.log(`[CATALOG] Fetching series from Jellyfin...`);
       items = await jellyfin.getSeries(cfg) || [];
-      console.log(`[CATALOG] Found ${items.length} series`);
+      console.log(`[CATALOG] Found ${items.length} series from Jellyfin`);
     } else {
       console.log(`[CATALOG] Unknown catalog: ${type}/${catalogId}`);
       return res.json({ metas: [] });
     }
+    
+    if (items.length === 0) {
+      console.log(`[CATALOG] No items found in Jellyfin library`);
+      return res.json({ metas: [] });
+    }
 
     // Convert Jellyfin items to Stremio meta format
+    let itemsWithIds = 0;
+    let itemsWithoutIds = 0;
     const metas = items
-      .filter(item => {
-        // Only include items with IMDb or TMDB IDs
-        const providerIds = item.ProviderIds || {};
-        return providerIds.Imdb || providerIds.Tmdb || providerIds.imdb || providerIds.tmdb;
-      })
       .map(item => {
         const providerIds = item.ProviderIds || {};
+        const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+        const hasTmdb = providerIds.Tmdb || providerIds.tmdb || providerIds.TMDB;
+        
+        if (!hasImdb && !hasTmdb) {
+          itemsWithoutIds++;
+          return null; // Skip items without IDs
+        }
+        itemsWithIds++;
+        
+        // Extract IDs
         const imdbId = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
         const tmdbId = providerIds.Tmdb || providerIds.tmdb || providerIds.TMDB;
         
@@ -251,7 +265,14 @@ app.get("/:cfg/catalog/:type/:catalogId.json", async (req, res) => {
       })
       .filter(meta => meta !== null); // Remove nulls
 
+    console.log(`[CATALOG] Items with IDs: ${itemsWithIds}, without IDs: ${itemsWithoutIds}`);
     console.log(`[CATALOG] Converted to ${metas.length} Stremio meta items`);
+    
+    if (metas.length === 0) {
+      console.error(`[CATALOG] WARNING: No items with IMDb/TMDB IDs found!`);
+      console.error(`[CATALOG] This means items in your Jellyfin library don't have metadata IDs.`);
+      console.error(`[CATALOG] You may need to refresh metadata in Jellyfin.`);
+    }
     
     // Cache catalog for 1 hour
     res.set('Cache-Control', 'public, max-age=3600');
