@@ -40,8 +40,22 @@ function baseManifest () {
     name    : "StreamBridge: Jellyfin to Stremio",
     description:
       "Stream media from your personal or shared Jellyfin server using IMDb/TMDB IDs.",
-    catalogs : [],
+    catalogs : [
+      {
+        type: "movie",
+        id: "jellyfin-movies",
+        name: "Jellyfin Movies"
+      },
+      {
+        type: "series",
+        id: "jellyfin-series",
+        name: "Jellyfin Series"
+      }
+    ],
     resources: [
+      { name: "catalog",
+        types: ["movie", "series"],
+        idPrefixes: ["tt", "imdb:", "tmdb:"] },
       { name: "stream",
         types: ["movie", "series"],
         idPrefixes: ["tt", "imdb:", "tmdb:"] }
@@ -145,6 +159,91 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
   } catch (e) {
     console.error("Stream handler error:", e);
     res.json({ streams: [] });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// CATALOG route  →  /<cfg>/catalog/<type>/<catalogId>.json
+// ──────────────────────────────────────────────────────────────────────────
+app.get("/:cfg/catalog/:type/:catalogId.json", async (req, res) => {
+  let cfg;
+  try {
+    cfg = decodeCfg(req.params.cfg);
+  } catch {
+    return res.json({ metas: [] });
+  }
+
+  const { type, catalogId } = req.params;
+  if (!cfg.serverUrl || !cfg.userId || !cfg.accessToken) {
+    return res.json({ metas: [] });
+  }
+
+  if (!jellyfin) {
+    console.error("jellyfinClient not loaded");
+    return res.json({ metas: [] });
+  }
+
+  try {
+    let items = [];
+    
+    if (type === "movie" && catalogId === "jellyfin-movies") {
+      items = await jellyfin.getMovies(cfg) || [];
+    } else if (type === "series" && catalogId === "jellyfin-series") {
+      items = await jellyfin.getSeries(cfg) || [];
+    } else {
+      return res.json({ metas: [] });
+    }
+
+    // Convert Jellyfin items to Stremio meta format
+    const metas = items
+      .filter(item => {
+        // Only include items with IMDb or TMDB IDs
+        const providerIds = item.ProviderIds || {};
+        return providerIds.Imdb || providerIds.Tmdb || providerIds.imdb || providerIds.tmdb;
+      })
+      .map(item => {
+        const providerIds = item.ProviderIds || {};
+        const imdbId = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
+        const tmdbId = providerIds.Tmdb || providerIds.tmdb || providerIds.TMDB;
+        
+        // Build Stremio ID (prefer IMDb, fallback to TMDB)
+        let id;
+        if (imdbId) {
+          id = imdbId.startsWith("tt") ? imdbId : `tt${imdbId}`;
+        } else if (tmdbId) {
+          id = `tmdb:${tmdbId}`;
+        } else {
+          return null; // Skip items without IDs
+        }
+
+        const meta = {
+          id: id,
+          type: type,
+          name: item.Name || "Untitled",
+          overview: item.Overview || "",
+          releaseInfo: item.ProductionYear ? `${item.ProductionYear}` : undefined,
+          runtime: item.RunTimeTicks ? Math.floor(item.RunTimeTicks / 10000000) : undefined, // Convert to seconds
+          genres: item.Genres || []
+        };
+
+        // Add poster/background images if available
+        if (item.ImageTags && item.ImageTags.Primary) {
+          meta.poster = `${cfg.serverUrl}/Items/${item.Id}/Images/Primary?api_key=${cfg.accessToken}`;
+        }
+        if (item.ImageTags && item.ImageTags.Backdrop) {
+          meta.background = `${cfg.serverUrl}/Items/${item.Id}/Images/Backdrop?api_key=${cfg.accessToken}`;
+        }
+
+        return meta;
+      })
+      .filter(meta => meta !== null); // Remove nulls
+
+    // Cache catalog for 1 hour
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.json({ metas });
+  } catch (e) {
+    console.error("Catalog handler error:", e);
+    res.json({ metas: [] });
   }
 });
 

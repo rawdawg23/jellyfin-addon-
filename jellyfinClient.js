@@ -954,10 +954,59 @@ async function getStream(idOrExternalId, config) {
     } 
 }
 
+/**
+ * Gets all movies from Jellyfin library for catalog.
+ * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
+ * @returns {Promise<Array<object>|null>} An array of Jellyfin movie items or null if unsuccessful.
+ */
+async function getMovies(config) {
+    if (!config.serverUrl || !config.userId || !config.accessToken) {
+        console.error("❌ Configuration missing for getMovies");
+        return null;
+    }
+    
+    const params = {
+        IncludeItemTypes: ITEM_TYPE_MOVIE,
+        Recursive: true,
+        Fields: "ProviderIds,Name,Id,Overview,ProductionYear,RunTimeTicks,Genres,ImageTags",
+        Limit: 1000,
+        UserId: config.userId
+    };
+    
+    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config);
+    return data?.Items || [];
+}
+
+/**
+ * Gets all series from Jellyfin library for catalog.
+ * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
+ * @returns {Promise<Array<object>|null>} An array of Jellyfin series items or null if unsuccessful.
+ */
+async function getSeries(config) {
+    if (!config.serverUrl || !config.userId || !config.accessToken) {
+        console.error("❌ Configuration missing for getSeries");
+        return null;
+    }
+    
+    const params = {
+        IncludeItemTypes: ITEM_TYPE_SERIES,
+        Recursive: true,
+        Fields: "ProviderIds,Name,Id,Overview,ProductionYear,Genres,ImageTags",
+        Limit: 1000,
+        UserId: config.userId
+    };
+    
+    const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config);
+    return data?.Items || [];
+}
+
 // --- Exports ---
 module.exports = {
     getStream,
+    getMovies,
+    getSeries,
     parseMediaId,
-    deduplicateAndSortStreams
+    deduplicateAndSortStreams,
+    makeJellyfinApiRequest
 };
 
