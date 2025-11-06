@@ -488,6 +488,175 @@ app.get("/health", (_req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
+// TEST endpoint  →  /test-search?cfg=<base64config>&imdbId=tt0147800
+// ──────────────────────────────────────────────────────────────────────────
+app.get("/test-search", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+
+  const cfgStr = req.query.cfg;
+  if (!cfgStr) {
+    return res.status(400).json({ error: "Missing cfg parameter" });
+  }
+
+  let cfg;
+  try {
+    cfg = JSON.parse(Buffer.from(cfgStr, "base64url").toString("utf8"));
+    if (cfg.serverUrl) {
+      cfg.serverUrl = cfg.serverUrl.replace(/\/+$/, '');
+    }
+  } catch (err) {
+    return res.status(400).json({ error: "Invalid cfg parameter" });
+  }
+
+  const testImdbId = req.query.imdbId || 'tt0147800';
+  const results = {
+    config: {
+      serverUrl: cfg.serverUrl,
+      userId: cfg.userId || '(will auto-fetch)',
+      apiKeyPreview: cfg.accessToken ? `${cfg.accessToken.substring(0, 10)}...` : 'MISSING'
+    },
+    testImdbId: testImdbId,
+    tests: []
+  };
+
+  if (!jellyfin) {
+    return res.status(500).json({ error: "jellyfinClient not loaded", results });
+  }
+
+  // Auto-fetch User ID if needed
+  if (!cfg.userId) {
+    const user = await jellyfin.getCurrentUser(cfg);
+    if (user && user.Id) {
+      cfg.userId = user.Id;
+      results.config.userId = cfg.userId;
+    }
+  }
+
+  const jellyfinApi = require('./jellyfinClient');
+  const axios = require('axios');
+  const HEADER_JELLYFIN_TOKEN = 'X-Emby-Token';
+
+  // Test 1: /Users/{userId}/Items with ImdbId
+  try {
+    const url1 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
+    const params1 = {
+      ImdbId: testImdbId,
+      IncludeItemTypes: 'Movie',
+      Recursive: true,
+      Fields: 'ProviderIds,Name,Id',
+      Limit: 10
+    };
+    const response1 = await axios({
+      method: 'get',
+      url: url1,
+      headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
+      params: params1,
+      timeout: 10000
+    });
+    results.tests.push({
+      name: '/Users/{userId}/Items with ImdbId parameter',
+      url: url1,
+      params: params1,
+      status: response1.status,
+      itemsCount: response1.data?.Items?.length || 0,
+      items: (response1.data?.Items || []).slice(0, 3).map(item => ({
+        name: item.Name,
+        id: item.Id,
+        providerIds: item.ProviderIds
+      }))
+    });
+  } catch (err) {
+    results.tests.push({
+      name: '/Users/{userId}/Items with ImdbId parameter',
+      error: err.message,
+      status: err.response?.status
+    });
+  }
+
+  // Test 2: /Users/{userId}/Items with AnyProviderIdEquals
+  try {
+    const url2 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
+    const params2 = {
+      AnyProviderIdEquals: `imdb.${testImdbId}`,
+      IncludeItemTypes: 'Movie',
+      Recursive: true,
+      Fields: 'ProviderIds,Name,Id',
+      Limit: 10
+    };
+    const response2 = await axios({
+      method: 'get',
+      url: url2,
+      headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
+      params: params2,
+      timeout: 10000
+    });
+    results.tests.push({
+      name: '/Users/{userId}/Items with AnyProviderIdEquals=imdb.xxx',
+      url: url2,
+      params: params2,
+      status: response2.status,
+      itemsCount: response2.data?.Items?.length || 0,
+      items: (response2.data?.Items || []).slice(0, 3).map(item => ({
+        name: item.Name,
+        id: item.Id,
+        providerIds: item.ProviderIds
+      }))
+    });
+  } catch (err) {
+    results.tests.push({
+      name: '/Users/{userId}/Items with AnyProviderIdEquals=imdb.xxx',
+      error: err.message,
+      status: err.response?.status
+    });
+  }
+
+  // Test 3: Sample of movies to see ProviderIds format
+  try {
+    const url3 = `${cfg.serverUrl}/Users/${cfg.userId}/Items`;
+    const params3 = {
+      IncludeItemTypes: 'Movie',
+      Recursive: true,
+      Fields: 'ProviderIds,Name,Id',
+      Limit: 5,
+      StartIndex: 0
+    };
+    const response3 = await axios({
+      method: 'get',
+      url: url3,
+      headers: { [HEADER_JELLYFIN_TOKEN]: cfg.accessToken },
+      params: params3,
+      timeout: 10000
+    });
+    results.tests.push({
+      name: 'Sample movies (to see ProviderIds format)',
+      url: url3,
+      params: params3,
+      status: response3.status,
+      itemsCount: response3.data?.Items?.length || 0,
+      items: (response3.data?.Items || []).map(item => ({
+        name: item.Name,
+        id: item.Id,
+        providerIds: item.ProviderIds
+      }))
+    });
+  } catch (err) {
+    results.tests.push({
+      name: 'Sample movies (to see ProviderIds format)',
+      error: err.message,
+      status: err.response?.status
+    });
+  }
+
+  res.json(results);
+});
+
+// ──────────────────────────────────────────────────────────────────────────
 // ROOT route  →  / (redirects to configure page)
 // ──────────────────────────────────────────────────────────────────────────
 app.get("/", (_req, res) => {
