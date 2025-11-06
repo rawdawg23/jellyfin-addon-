@@ -302,15 +302,17 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         UserId: config.userId
     };
 
-    // --- Strategy 1: Direct ID Lookup (/Items) ---
+    // --- Strategy 1: Direct ID Lookup (/Users/{UserId}/Items) ---
+    // Use /Users/{UserId}/Items instead of /Items for better performance with large libraries
     const directLookupParams = { ...baseMovieParams };
     let searchedIdField = "";
     if (imdbId) { directLookupParams.ImdbId = imdbId; searchedIdField = "ImdbId"; }
     else if (tmdbId) { directLookupParams.TmdbId = tmdbId; searchedIdField = "TmdbId"; }
     else if (tvdbId) { directLookupParams.TvdbId = tvdbId; searchedIdField = "TvdbId"; }
     else if (anidbId) { directLookupParams.AniDbId = anidbId; searchedIdField = "AniDbId"; }
+    delete directLookupParams.UserId; // /Users/{userId}/Items doesn't need UserId in params
     if (searchedIdField) {
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Items`, directLookupParams, config);
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config);
         if (data?.Items?.length > 0) {
             const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
             if (matches.length > 0) {
