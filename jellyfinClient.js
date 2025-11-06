@@ -376,7 +376,7 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     if (searchedIdField) {
         console.log(`[FIND] Strategy 1: Setting up parallel search with ${searchedIdField}=${directLookupParams[searchedIdField]}`);
         searchPromises.push(
-            makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config)
+            makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 30000)
                 .then(data => {
                     console.log(`[FIND] Strategy 1: Received ${data?.Items?.length || 0} items from API`);
                     if (data?.Items?.length > 0) {
@@ -438,7 +438,7 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         altParams.Limit = 10;
         
         searchPromises.push(
-            makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config)
+            makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 30000)
                 .then(data => {
                     console.log(`[FIND] Strategy 2 (${attemptFormat}): Received ${data?.Items?.length || 0} items from API`);
                     if (data?.Items?.length > 0) {
@@ -507,7 +507,7 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             altParams.Limit = 10;
             
             try {
-                const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config);
+                const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config, 30000);
                 console.log(`[FIND] Strategy 2 (${attemptFormat}): Received ${data?.Items?.length || 0} items from API`);
                 if (data?.Items?.length > 0) {
                     // Debug: Show ProviderIds of first few items
@@ -612,7 +612,7 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             delete seriesLookupParams2.TmdbId;
             delete seriesLookupParams2.TvdbId;
             delete seriesLookupParams2.AniDbId;
-            const data2 = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, seriesLookupParams2, config);
+            const data2 = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, seriesLookupParams2, config, 30000);
             if (data2?.Items?.length > 0) {
                 const matches = data2.Items.filter(s => _isMatchingProviderId(s.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                  if (matches.length > 0) {
@@ -646,7 +646,7 @@ async function findItemById(jellyfinId, itemType, config) {
     }
     
     try {
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items/${jellyfinId}`, {}, config);
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items/${jellyfinId}`, {}, config, 30000);
         if (data && data.Id) {
             // Verify it's the right type
             if (itemType === ITEM_TYPE_MOVIE && data.Type === ITEM_TYPE_MOVIE) {
