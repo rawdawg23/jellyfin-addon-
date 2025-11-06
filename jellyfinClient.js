@@ -402,29 +402,72 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
                 
                 console.log(`[FIND] Strategy 3: Found TMDB metadata - "${movieName}" (${releaseYear})`);
                 
-                // Search Jellyfin by name and year
+                // Search Jellyfin by name - try multiple search strategies
+                // First try: SearchTerm parameter
+                let searchData = null;
                 const searchParams = {
                     ...baseMovieParams,
                     SearchTerm: movieName,
-                    Limit: 50 // Search more items to find matches
+                    Limit: 100 // Search more items
                 };
                 
-                const searchData = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, searchParams, config);
+                searchData = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, searchParams, config);
+                
+                // If search didn't work, try fetching all movies and filtering
+                if (!searchData?.Items || searchData.Items.length === 0) {
+                    console.log(`[FIND] Strategy 3: SearchTerm didn't work, trying broader search...`);
+                    const allMoviesParams = {
+                        ...baseMovieParams,
+                        Limit: 1000, // Get more movies to search through
+                        StartIndex: 0
+                    };
+                    delete allMoviesParams.SearchTerm; // Remove SearchTerm
+                    searchData = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, allMoviesParams, config);
+                }
+                
                 if (searchData?.Items?.length > 0) {
+                    // Normalize movie name for comparison (remove special chars, lowercase)
+                    const normalizeName = (name) => {
+                        if (!name) return '';
+                        return name.toLowerCase()
+                            .replace(/[^\w\s]/g, '') // Remove special characters
+                            .replace(/\s+/g, ' ')      // Normalize whitespace
+                            .trim();
+                    };
+                    
+                    const normalizedMovieName = normalizeName(movieName);
+                    
                     // Find best match by name similarity and year
                     const matches = searchData.Items.filter(item => {
-                        const nameMatch = item.Name && item.Name.toLowerCase().includes(movieName.toLowerCase());
+                        if (!item.Name) return false;
+                        
+                        const normalizedItemName = normalizeName(item.Name);
+                        
+                        // Check if names match (after normalization)
+                        const nameMatch = normalizedItemName === normalizedMovieName ||
+                            normalizedItemName.includes(normalizedMovieName) ||
+                            normalizedMovieName.includes(normalizedItemName);
+                        
+                        // Year match - allow 1 year difference
                         const yearMatch = !releaseYear || !item.ProductionYear || 
-                            Math.abs(item.ProductionYear - releaseYear) <= 1; // Allow 1 year difference
+                            Math.abs(item.ProductionYear - releaseYear) <= 1;
+                        
                         return nameMatch && yearMatch;
                     });
                     
                     if (matches.length > 0) {
                         console.log(`[FIND] Strategy 3: Found ${matches.length} movie(s) by name/year match`);
+                        console.log(`[FIND] Strategy 3: Matched: "${matches[0].Name}" (${matches[0].ProductionYear})`);
                         foundItems.push(...matches);
                     } else {
-                        console.log(`[FIND] Strategy 3: No movies found matching name/year`);
+                        console.log(`[FIND] Strategy 3: No movies found matching name/year. Searched ${searchData.Items.length} items.`);
+                        // Log first few item names for debugging
+                        if (searchData.Items.length > 0) {
+                            console.log(`[FIND] Strategy 3: Sample item names:`, searchData.Items.slice(0, 5).map(i => i.Name).join(', '));
+                        }
                     }
+                } else {
+                    console.log(`[FIND] Strategy 3: No items returned from Jellyfin search`);
                 }
             } else {
                 console.log(`[FIND] Strategy 3: Could not fetch TMDB metadata for IMDb ${imdbId}`);
