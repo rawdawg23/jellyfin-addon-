@@ -15,6 +15,118 @@ const CODEC_FORMAT_MAP = {
   'ssa': 'ssa'
 };
 
+// --- In-Memory Cache for Movies (to bypass Jellyfin's broken search API) ---
+const movieCache = {
+  items: [], // Array of all movie items
+  indexedByImdb: new Map(), // Map<imdbId, Array<items>>
+  indexedByTmdb: new Map(), // Map<tmdbId, Array<items>>
+  indexedByTvdb: new Map(), // Map<tvdbId, Array<items>>
+  indexedByAnidb: new Map(), // Map<anidbId, Array<items>>
+  indexedById: new Map(), // Map<jellyfinId, item>
+  lastUpdated: null,
+  configHash: null // Hash of config to detect changes
+};
+
+/**
+ * Creates a hash from config for cache invalidation
+ */
+function getConfigHash(config) {
+  return `${config.serverUrl}:${config.userId || 'auto'}`;
+}
+
+/**
+ * Indexes movies in the cache for fast lookup
+ */
+function indexMovies(movies) {
+  console.log(`[CACHE] Indexing ${movies.length} movies...`);
+  
+  // Clear old indexes
+  movieCache.indexedByImdb.clear();
+  movieCache.indexedByTmdb.clear();
+  movieCache.indexedByTvdb.clear();
+  movieCache.indexedByAnidb.clear();
+  movieCache.indexedById.clear();
+  
+  movies.forEach(item => {
+    // Index by Jellyfin ID
+    movieCache.indexedById.set(item.Id, item);
+    
+    // Index by ProviderIds
+    if (item.ProviderIds) {
+      // IMDb
+      if (item.ProviderIds.Imdb || item.ProviderIds.imdb || item.ProviderIds.IMDB) {
+        const imdbId = item.ProviderIds.Imdb || item.ProviderIds.imdb || item.ProviderIds.IMDB;
+        const imdbKey = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+        if (!movieCache.indexedByImdb.has(imdbKey)) {
+          movieCache.indexedByImdb.set(imdbKey, []);
+        }
+        movieCache.indexedByImdb.get(imdbKey).push(item);
+      }
+      
+      // TMDb
+      if (item.ProviderIds.Tmdb || item.ProviderIds.tmdb || item.ProviderIds.TMDB) {
+        const tmdbId = String(item.ProviderIds.Tmdb || item.ProviderIds.tmdb || item.ProviderIds.TMDB);
+        if (!movieCache.indexedByTmdb.has(tmdbId)) {
+          movieCache.indexedByTmdb.set(tmdbId, []);
+        }
+        movieCache.indexedByTmdb.get(tmdbId).push(item);
+      }
+      
+      // TVDB
+      if (item.ProviderIds.Tvdb || item.ProviderIds.tvdb || item.ProviderIds.TVDB) {
+        const tvdbId = String(item.ProviderIds.Tvdb || item.ProviderIds.tvdb || item.ProviderIds.TVDB);
+        if (!movieCache.indexedByTvdb.has(tvdbId)) {
+          movieCache.indexedByTvdb.set(tvdbId, []);
+        }
+        movieCache.indexedByTvdb.get(tvdbId).push(item);
+      }
+      
+      // AniDB
+      if (item.ProviderIds.AniDb || item.ProviderIds.anidb || item.ProviderIds.ANIDB) {
+        const anidbId = String(item.ProviderIds.AniDb || item.ProviderIds.anidb || item.ProviderIds.ANIDB);
+        if (!movieCache.indexedByAnidb.has(anidbId)) {
+          movieCache.indexedByAnidb.set(anidbId, []);
+        }
+        movieCache.indexedByAnidb.get(anidbId).push(item);
+      }
+    }
+  });
+  
+  console.log(`[CACHE] Indexed: ${movieCache.indexedByImdb.size} IMDb IDs, ${movieCache.indexedByTmdb.size} TMDb IDs, ${movieCache.indexedByTvdb.size} TVDB IDs, ${movieCache.indexedByAnidb.size} AniDB IDs`);
+}
+
+/**
+ * Loads movies into cache (fetches from Jellyfin if needed)
+ */
+async function loadMovieCache(config, forceRefresh = false) {
+  const configHash = getConfigHash(config);
+  
+  // Check if cache is valid
+  if (!forceRefresh && movieCache.items.length > 0 && movieCache.configHash === configHash) {
+    const cacheAge = Date.now() - movieCache.lastUpdated;
+    const maxAge = 5 * 60 * 1000; // 5 minutes
+    if (cacheAge < maxAge) {
+      console.log(`[CACHE] Using cached movies (${Math.floor(cacheAge / 1000)}s old)`);
+      return movieCache.items;
+    }
+  }
+  
+  console.log(`[CACHE] Fetching movies from Jellyfin...`);
+  
+  // Fetch all movies
+  const movies = await getMovies(config) || [];
+  
+  if (movies.length > 0) {
+    movieCache.items = movies;
+    movieCache.configHash = configHash;
+    movieCache.lastUpdated = Date.now();
+    indexMovies(movies);
+    console.log(`[CACHE] Cached ${movies.length} movies`);
+  }
+  
+  return movies;
+}
+
 // --- Helper Functions ---
 
 
