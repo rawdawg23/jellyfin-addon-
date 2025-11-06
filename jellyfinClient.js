@@ -313,9 +313,11 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
             console.log(`[FIND] Strategy 1: Found ${data.Items.length} items from API, filtering...`);
             const matches = data.Items.filter(i => {
                 const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
-                if (!matches && data.Items.length <= 3) {
-                    // Log ProviderIds for first few items to debug
-                    console.log(`[FIND] Strategy 1: Item "${i.Name}" has ProviderIds:`, JSON.stringify(i.ProviderIds));
+                if (!matches) {
+                    // Always log ProviderIds for debugging (up to first 5 items)
+                    if (data.Items.indexOf(i) < 5) {
+                        console.log(`[FIND] Strategy 1: Item "${i.Name}" has ProviderIds:`, JSON.stringify(i.ProviderIds));
+                    }
                 }
                 return matches;
             });
@@ -359,8 +361,11 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
                 console.log(`[FIND] Strategy 2: Found ${data.Items.length} items with AnyProviderIdEquals=${attemptFormat}, filtering...`);
                 const matches = data.Items.filter(i => {
                     const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
-                    if (!matches && data.Items.length <= 3) {
-                        console.log(`[FIND] Strategy 2: Item "${i.Name}" has ProviderIds:`, JSON.stringify(i.ProviderIds));
+                    if (!matches) {
+                        // Always log ProviderIds for debugging (up to first 5 items)
+                        if (data.Items.indexOf(i) < 5) {
+                            console.log(`[FIND] Strategy 2: Item "${i.Name}" has ProviderIds:`, JSON.stringify(i.ProviderIds));
+                        }
                     }
                     return matches;
                 });

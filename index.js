@@ -132,13 +132,15 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
   }
 
   // Set timeout to prevent hanging - Stremio needs quick responses
+  let timeoutTriggered = false;
   const timeout = setTimeout(() => {
     console.error("[STREAM] Request timeout - returning empty streams");
+    timeoutTriggered = true;
     if (!res.headersSent) {
       res.set('Cache-Control', 'no-cache');
       res.json({ streams: [] });
     }
-  }, 15000); // 15 second timeout
+  }, 20000); // 20 second timeout (increased for large libraries)
 
   let cfg;
   try {
@@ -210,20 +212,25 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
       });
     // Set cache based on whether streams were found
     clearTimeout(timeout);
+    if (timeoutTriggered) {
+      console.log("[STREAM] Timeout already triggered, skipping response");
+      return; // Timeout already sent response
+    }
+    
     if (streams.length > 0) {
       console.log(`[STREAM] Returning ${streams.length} stream(s) to Stremio`);
       res.set('Cache-Control', 'public, max-age=120');  // Cache for 2 minutes when streams exist
+      res.json({ streams });
     } else {
       console.warn(`[STREAM] No streams found for ${type}/${id} - movie may not be in Jellyfin library`);
       res.set('Cache-Control', 'no-cache');  // Don't cache empty results
+      res.json({ streams: [] });
     }
-
-    res.json({ streams });
   } catch (e) {
     clearTimeout(timeout);
     console.error("[STREAM] Handler error:", e);
     console.error("[STREAM] Error stack:", e.stack);
-    if (!res.headersSent) {
+    if (!timeoutTriggered && !res.headersSent) {
       res.set('Cache-Control', 'no-cache');
       res.json({ streams: [] });
     }
