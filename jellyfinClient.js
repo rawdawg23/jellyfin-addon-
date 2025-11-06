@@ -189,6 +189,9 @@ async function makeJellyfinApiRequest(url, params = {}, config) {
  * @returns {Promise<object|null>} The found Jellyfin movie item or null.
  */
 async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
+    console.log(`[FIND] Searching for movie - IMDb: ${imdbId}, TMDB: ${tmdbId}, TVDB: ${tvdbId}, AniDB: ${anidbId}`);
+    console.log(`[FIND] Using User ID: ${config.userId}`);
+    
     let foundItems = [];
     const baseMovieParams = {
         IncludeItemTypes: ITEM_TYPE_MOVIE,
@@ -202,18 +205,33 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     // --- Strategy 1: Direct ID Lookup (/Items) ---
     const directLookupParams = { ...baseMovieParams };
     let searchedIdField = "";
-    if (imdbId) { directLookupParams.ImdbId = imdbId; searchedIdField = "ImdbId"; }
+    if (imdbId) { 
+        directLookupParams.ImdbId = imdbId; 
+        searchedIdField = "ImdbId";
+        console.log(`[FIND] Strategy 1: Searching with ImdbId=${imdbId}`);
+    }
     else if (tmdbId) { directLookupParams.TmdbId = tmdbId; searchedIdField = "TmdbId"; }
     else if (tvdbId) { directLookupParams.TvdbId = tvdbId; searchedIdField = "TvdbId"; }
     else if (anidbId) { directLookupParams.AniDbId = anidbId; searchedIdField = "AniDbId"; }
     if (searchedIdField) {
         const data = await makeJellyfinApiRequest(`${config.serverUrl}/Items`, directLookupParams, config);
         if (data?.Items?.length > 0) {
-            const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+            console.log(`[FIND] Strategy 1: Found ${data.Items.length} items, checking ProviderIds...`);
+            const matches = data.Items.filter(i => {
+                const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                if (!matches) {
+                    console.log(`[FIND] Item "${i.Name}" has ProviderIds:`, JSON.stringify(i.ProviderIds));
+                }
+                return matches;
+            });
             if (matches.length > 0) {
-                //console.log(`🔍 Found movie via /Items with ${searchedIdField}=${directLookupParams[searchedIdField]}`);
+                console.log(`[FIND] Strategy 1: Found ${matches.length} matching movie(s)`);
                 foundItems.push(...matches);
+            } else {
+                console.log(`[FIND] Strategy 1: No items matched ProviderId filter`);
             }
+        } else {
+            console.log(`[FIND] Strategy 1: No items returned from API`);
         }
     }
 
@@ -251,8 +269,11 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         }
     }
 
-     //if (foundItems.length === 0) 
-        //console.log(`📭 No Jellyfin movie match found for ${imdbId || tmdbId || tvdbId || anidbId}.`);
+    if (foundItems.length === 0) {
+        console.log(`[FIND] No Jellyfin movie match found for ${imdbId || tmdbId || tvdbId || anidbId} after all strategies`);
+    } else {
+        console.log(`[FIND] Successfully found ${foundItems.length} movie(s)`);
+    }
     return foundItems; // Return foundItems if found after all attempts
 }
 
