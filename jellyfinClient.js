@@ -307,12 +307,26 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     else if (tvdbId) { directLookupParams.TvdbId = tvdbId; searchedIdField = "TvdbId"; }
     else if (anidbId) { directLookupParams.AniDbId = anidbId; searchedIdField = "AniDbId"; }
     if (searchedIdField) {
+        console.log(`[FIND] Strategy 1: Searching with ${searchedIdField}=${directLookupParams[searchedIdField]}`);
         const data = await makeJellyfinApiRequest(`${config.serverUrl}/Items`, directLookupParams, config);
         if (data?.Items?.length > 0) {
-            const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+            console.log(`[FIND] Strategy 1: Found ${data.Items.length} items from API, filtering...`);
+            const matches = data.Items.filter(i => {
+                const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                if (!matches && data.Items.length <= 3) {
+                    // Log ProviderIds for first few items to debug
+                    console.log(`[FIND] Strategy 1: Item "${i.Name}" has ProviderIds:`, JSON.stringify(i.ProviderIds));
+                }
+                return matches;
+            });
             if (matches.length > 0) {
+                console.log(`[FIND] Strategy 1: Found ${matches.length} matching movie(s)`);
                 foundItems.push(...matches);
+            } else {
+                console.log(`[FIND] Strategy 1: No items matched ProviderId filter`);
             }
+        } else {
+            console.log(`[FIND] Strategy 1: No items returned from API`);
         }
     }
 
@@ -332,6 +346,7 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         }
 
         for (const attemptFormat of anyProviderIdFormats) {
+            console.log(`[FIND] Strategy 2: Trying AnyProviderIdEquals=${attemptFormat}`);
             const altParams = { ...baseMovieParams, AnyProviderIdEquals: attemptFormat };
             delete altParams.ImdbId; // Remove specific ID params when using AnyProviderIdEquals
             delete altParams.TmdbId;
@@ -341,9 +356,20 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
 
             const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config);
             if (data?.Items?.length > 0) {
-                const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                 if (matches.length > 0) {
+                console.log(`[FIND] Strategy 2: Found ${data.Items.length} items with AnyProviderIdEquals=${attemptFormat}, filtering...`);
+                const matches = data.Items.filter(i => {
+                    const matches = _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId);
+                    if (!matches && data.Items.length <= 3) {
+                        console.log(`[FIND] Strategy 2: Item "${i.Name}" has ProviderIds:`, JSON.stringify(i.ProviderIds));
+                    }
+                    return matches;
+                });
+                if (matches.length > 0) {
+                    console.log(`[FIND] Strategy 2: Found ${matches.length} matching movie(s) with AnyProviderIdEquals=${attemptFormat}`);
                     foundItems.push(...matches);
+                    break; // Stop trying other formats once we find a match
+                } else {
+                    console.log(`[FIND] Strategy 2: No items matched ProviderId filter for ${attemptFormat}`);
                 }
             }
         }
