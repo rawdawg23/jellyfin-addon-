@@ -1,5 +1,5 @@
 ---
-title: StreamBridge
+title: EP-FIN
 emoji: 🎬
 colorFrom: green
 colorTo: blue
@@ -7,9 +7,9 @@ sdk: docker
 app_port: 7860
 ---
 
-# StreamBridge: Jellyfin to Stremio Addon
+# EP-FIN: Jellyfin to Stremio Addon
 
-**StreamBridge** is a Stremio addon that lets you stream content from your personal or shared Jellyfin server using IMDb or TMDb IDs.
+**EP-FIN** is a Stremio addon that lets you stream content from your personal or shared Jellyfin server using IMDb or TMDb IDs.
 
 ## 🚀 Quick Start
 
@@ -36,7 +36,7 @@ app_port: 7860
 
 ## 📖 Usage
 
-After installation, browse titles in Stremio using catalog addons like Cinemeta. When you click on a movie or episode, StreamBridge will check if it exists in your Jellyfin library and return a direct play link if found.
+After installation, browse titles in Stremio using catalog addons like Cinemeta. When you click on a movie or episode, EP-FIN will check if it exists in your Jellyfin library and return a direct play link if found.
 
 ## ⚠️ Important Notes
 
