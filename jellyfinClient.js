@@ -1180,19 +1180,22 @@ async function getMovies(config) {
             
             allItems.push(...items);
             
-            // Check if we've fetched all items based on TotalRecordCount
-            if (totalRecords > 0) {
-                // Use TotalRecordCount as authoritative source
-                if (allItems.length >= totalRecords) {
-                    hasMore = false;
-                } else {
-                    startIndex += pageSize;
-                }
-            } else if (items.length < pageSize) {
-                // Fallback: if TotalRecordCount not available, stop when we get fewer items than page size
+            // Always continue paginating until we get fewer items than page size
+            // Don't rely solely on TotalRecordCount as it may be inaccurate for large libraries
+            if (items.length < pageSize) {
+                // Got fewer items than page size - we've reached the end
+                hasMore = false;
+            } else if (totalRecords > 0 && allItems.length >= totalRecords) {
+                // TotalRecordCount says we're done and we've fetched that many
                 hasMore = false;
             } else {
+                // Continue to next page
                 startIndex += pageSize;
+                // Safety check: prevent infinite loops (max 1000 pages = 10 million items)
+                if (startIndex >= pageSize * 1000) {
+                    console.warn(`[GETMOVIES] Reached safety limit of ${pageSize * 1000} items, stopping pagination`);
+                    hasMore = false;
+                }
             }
         }
         
@@ -1421,19 +1424,22 @@ async function getSeries(config) {
             
             allItems.push(...items);
             
-            // Check if we've fetched all items based on TotalRecordCount
-            if (totalRecords > 0) {
-                // Use TotalRecordCount as authoritative source
-                if (allItems.length >= totalRecords) {
-                    hasMore = false;
-                } else {
-                    startIndex += pageSize;
-                }
-            } else if (items.length < pageSize) {
-                // Fallback: if TotalRecordCount not available, stop when we get fewer items than page size
+            // Always continue paginating until we get fewer items than page size
+            // Don't rely solely on TotalRecordCount as it may be inaccurate for large libraries
+            if (items.length < pageSize) {
+                // Got fewer items than page size - we've reached the end
+                hasMore = false;
+            } else if (totalRecords > 0 && allItems.length >= totalRecords) {
+                // TotalRecordCount says we're done and we've fetched that many
                 hasMore = false;
             } else {
+                // Continue to next page
                 startIndex += pageSize;
+                // Safety check: prevent infinite loops (max 1000 pages = 10 million items)
+                if (startIndex >= pageSize * 1000) {
+                    console.warn(`[GETSERIES] Reached safety limit of ${pageSize * 1000} items, stopping pagination`);
+                    hasMore = false;
+                }
             }
         }
         
