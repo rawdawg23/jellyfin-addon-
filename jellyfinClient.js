@@ -590,7 +590,7 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     else if (tmdbId) seriesLookupParams1.TmdbId = tmdbId;
     else if (tvdbId) seriesLookupParams1.TvdbId = tvdbId;
     else if (anidbId) seriesLookupParams1.AniDbId = anidbId;
-    const data1 = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, seriesLookupParams1, config);
+    const data1 = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, seriesLookupParams1, config, 30000);
     if (data1?.Items?.length > 0) {
         const matches = data1.Items.filter(s => _isMatchingProviderId(s.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
         if (matches.length > 0) {
