@@ -7,8 +7,17 @@
 const express      = require("express");
 const path         = require("path");
 const cors         = require("cors");
-const jellyfin     = require("./jellyfinClient");   
+const fs           = require("fs");
 require("dotenv").config();
+
+// Load jellyfinClient with error handling
+let jellyfin;
+try {
+  jellyfin = require("./jellyfinClient");
+} catch (err) {
+  console.error("Failed to load jellyfinClient:", err);
+  // Continue anyway - routes will handle errors
+}
 
 const PORT = process.env.PORT || 7000;
 const app  = express();
@@ -99,6 +108,10 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
     return res.json({ streams: [] });
 
   try {
+    if (!jellyfin) {
+      console.error("jellyfinClient not loaded");
+      return res.json({ streams: [] });
+    }
     const raw = await jellyfin.getStream(id, cfg);         
     const streams = (raw || [])
       .filter(s => s.directPlayUrl)
@@ -147,6 +160,13 @@ app.get("/manifest.json", (_req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
+// HEALTH CHECK route (for Hugging Face Spaces)
+// ──────────────────────────────────────────────────────────────────────────
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", service: "streambridge" });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
 // ROOT route  →  / (redirects to configure page)
 // ──────────────────────────────────────────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -154,18 +174,58 @@ app.get("/", (_req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
-// CONFIGURE route  →  /configure
+// CONFIGURE route  →  /configure (must be before /:cfg/configure)
 // ──────────────────────────────────────────────────────────────────────────
-app.get("/configure", (_req, res) =>
-  res.sendFile(path.join(__dirname, "public", "configure.html")));
+app.get("/configure", (_req, res) => {
+  const filePath = path.join(__dirname, "public", "configure.html");
+  
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    console.error("configure.html not found at:", filePath);
+    console.error("Current directory:", __dirname);
+    console.error("Files in public:", fs.readdirSync(path.join(__dirname, "public")));
+    return res.status(500).send("Configuration file not found");
+  }
+  
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error("Error sending configure.html:", err);
+      res.status(500).send("Error loading configuration page: " + err.message);
+    }
+  });
+});
 
 app.get("/:cfg/configure", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "configure.html"));
+  const filePath = path.join(__dirname, "public", "configure.html");
+  
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    console.error("configure.html not found at:", filePath);
+    return res.status(500).send("Configuration file not found");
+  }
+  
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error("Error sending configure.html:", err);
+      res.status(500).send("Error loading configuration page: " + err.message);
+    }
+  });
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// Error handling middleware
+// ──────────────────────────────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error", message: err.message });
+});
+
 // ──────────────────────────────────────────────────────────────────────────
 // Start the server
 // ──────────────────────────────────────────────────────────────────────────
 const HOST = process.env.HOST || '0.0.0.0';
-app.listen(PORT, HOST, () =>
-  console.log(`🚀  StreamBridge up at http://${HOST}:${PORT}/<cfg>/manifest.json`)
-);
+app.listen(PORT, HOST, () => {
+  console.log(`🚀  StreamBridge up at http://${HOST}:${PORT}/<cfg>/manifest.json`);
+  console.log(`📋  Configure page: http://${HOST}:${PORT}/configure`);
+  console.log(`💚  Health check: http://${HOST}:${PORT}/health`);
+});
