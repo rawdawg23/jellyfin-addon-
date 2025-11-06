@@ -102,7 +102,7 @@ app.get("/:cfg/manifest.json", (req, res) => {
   mf.id += "." + cfgString.slice(0, 8); 
 
   const serverHostname = (cfg && cfg.serverUrl) ? cfg.serverUrl.replace(/^https?:\/\//, "") : "Unknown Server";
-  mf.name += ` (${serverHostname})`;
+  mf.name = `StreamBridge: Jellyfin to Stremio (${serverHostname})`;
   mf.behaviorHints.configurationRequired = false;
   
   // Update catalog names to include server info
@@ -112,6 +112,8 @@ app.get("/:cfg/manifest.json", (req, res) => {
     });
   }
 
+  console.log(`[MANIFEST] Returning manifest for: ${mf.name}`);
+  console.log(`[MANIFEST] Stream resource configured:`, mf.resources.find(r => r.name === 'stream'));
   res.json(mf);
 });
 
