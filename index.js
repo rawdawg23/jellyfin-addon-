@@ -119,23 +119,41 @@ app.get("/:cfg/manifest.json", (req, res) => {
 // STREAM route  →  /<cfg>/stream/<type>/<id>.json
 // ──────────────────────────────────────────────────────────────────────────
 app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
+  // Set CORS headers explicitly
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  
+  // Handle OPTIONS preflight
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+
   let cfg;
   try {
     cfg = decodeCfg(req.params.cfg);
-  } catch {
+  } catch (err) {
+    console.error("[STREAM] Failed to decode config:", err);
     return res.json({ streams: [] });
   }
 
-  const { id } = req.params;
-  if (!cfg.serverUrl || !cfg.userId || !cfg.accessToken)
+  const { type, id } = req.params;
+  console.log(`[STREAM] Request for ${type}/${id}`);
+  
+  if (!cfg.serverUrl || !cfg.userId || !cfg.accessToken) {
+    console.error("[STREAM] Missing configuration");
     return res.json({ streams: [] });
+  }
+
+  if (!jellyfin) {
+    console.error("[STREAM] jellyfinClient not loaded");
+    return res.json({ streams: [] });
+  }
 
   try {
-    if (!jellyfin) {
-      console.error("jellyfinClient not loaded");
-      return res.json({ streams: [] });
-    }
-    const raw = await jellyfin.getStream(id, cfg);         
+    console.log(`[STREAM] Searching for ${type} with ID: ${id}`);
+    const raw = await jellyfin.getStream(id, cfg);
+    console.log(`[STREAM] Found ${raw?.length || 0} stream(s) from Jellyfin`);         
     const streams = (raw || [])
       .filter(s => s.directPlayUrl)
       .map(s => {
@@ -157,14 +175,17 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
       });
     // Set cache based on whether streams were found
     if (streams.length > 0) {
+      console.log(`[STREAM] Returning ${streams.length} stream(s) to Stremio`);
       res.set('Cache-Control', 'public, max-age=120');  // Cache for 2 minutes when streams exist
     } else {
+      console.warn(`[STREAM] No streams found for ${type}/${id}`);
       res.set('Cache-Control', 'no-cache');  // Don't cache empty results
     }
 
     res.json({ streams });
   } catch (e) {
-    console.error("Stream handler error:", e);
+    console.error("[STREAM] Handler error:", e);
+    console.error("[STREAM] Error stack:", e.stack);
     res.json({ streams: [] });
   }
 });
