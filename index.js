@@ -55,10 +55,10 @@ function baseManifest () {
     resources: [
       { name: "catalog",
         types: ["movie", "series"],
-        idPrefixes: ["tt", "imdb:", "tmdb:"] },
+        idPrefixes: ["tt", "imdb:", "tmdb:", "jellyfin:"] },
       { name: "stream",
         types: ["movie", "series"],
-        idPrefixes: ["tt", "imdb:", "tmdb:"] }
+        idPrefixes: ["tt", "imdb:", "tmdb:", "jellyfin:"] }
     ],
     types: ["movie", "series"],
     behaviorHints: { configurable: true, configurationRequired: true },
@@ -279,24 +279,22 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
         const hasImdb = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
         const hasTmdb = providerIds.Tmdb || providerIds.tmdb || providerIds.TMDB;
         
-        if (!hasImdb && !hasTmdb) {
-          itemsWithoutIds++;
-          return null; // Skip items without IDs
-        }
-        itemsWithIds++;
-        
         // Extract IDs
         const imdbId = providerIds.Imdb || providerIds.imdb || providerIds.IMDB;
         const tmdbId = providerIds.Tmdb || providerIds.tmdb || providerIds.TMDB;
         
-        // Build Stremio ID (prefer IMDb, fallback to TMDB)
+        // Build Stremio ID (prefer IMDb, fallback to TMDB, fallback to Jellyfin ID)
         let id;
         if (imdbId) {
           id = imdbId.startsWith("tt") ? imdbId : `tt${imdbId}`;
+          itemsWithIds++;
         } else if (tmdbId) {
           id = `tmdb:${tmdbId}`;
+          itemsWithIds++;
         } else {
-          return null; // Skip items without IDs
+          // Use Jellyfin internal ID for items without ProviderIds
+          id = `jellyfin:${item.Id}`;
+          itemsWithoutIds++;
         }
 
         const meta = {

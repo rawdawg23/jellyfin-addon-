@@ -78,14 +78,28 @@ function parseMediaId(idOrExternalId) {
     let tmdbId = null;
     let tvdbId = null;
     let anidbId = null;
+    let jellyfinId = null; // Direct Jellyfin internal ID
 
     if (parts.length === 3) {
-        itemType = ITEM_TYPE_EPISODE; // Indicates a series episode
-        seasonNumber = parseInt(parts[1], 10);
-        episodeNumber = parseInt(parts[2], 10);
-        if (isNaN(seasonNumber) || isNaN(episodeNumber)) {
-             console.warn("❌ Invalid season/episode number in ID:", idOrExternalId);
-             return null; // Invalid format
+        // Check if it's jellyfin:ID:season:episode format
+        if (parts[0].toLowerCase() === "jellyfin") {
+            jellyfinId = parts[1];
+            seasonNumber = parseInt(parts[2], 10);
+            episodeNumber = parseInt(parts[3], 10);
+            if (isNaN(seasonNumber) || isNaN(episodeNumber)) {
+                console.warn("❌ Invalid season/episode number in Jellyfin ID:", idOrExternalId);
+                return null;
+            }
+            itemType = ITEM_TYPE_EPISODE;
+            baseId = `jellyfin:${jellyfinId}`;
+        } else {
+            itemType = ITEM_TYPE_EPISODE; // Indicates a series episode
+            seasonNumber = parseInt(parts[1], 10);
+            episodeNumber = parseInt(parts[2], 10);
+            if (isNaN(seasonNumber) || isNaN(episodeNumber)) {
+                 console.warn("❌ Invalid season/episode number in ID:", idOrExternalId);
+                 return null; // Invalid format
+            }
         }
     } else if (parts.length === 2) {
         
@@ -95,7 +109,10 @@ function parseMediaId(idOrExternalId) {
             console.warn(`❌ Missing ${prefix.toUpperCase()} ID part in ID:`, idOrExternalId);
             return null;
         }
-        if (prefix === "tmdb") {
+        if (prefix === "jellyfin") {
+            jellyfinId = idPart;
+            baseId = `jellyfin:${jellyfinId}`;
+        } else if (prefix === "tmdb") {
             tmdbId = idPart;
             baseId = `tmdb${idPart}`; // normalized
         } else if (prefix === "imdb") {
@@ -116,7 +133,9 @@ function parseMediaId(idOrExternalId) {
         return null; // Unexpected format
     }
 
-    if (baseId.startsWith("tt")) {
+    if (jellyfinId) {
+        // Jellyfin ID already set, no need to parse baseId
+    } else if (baseId.startsWith("tt")) {
         if (baseId.length <= 2) {
             console.warn("❌ Incomplete IMDb ID format:", baseId);
             return null;
@@ -131,12 +150,14 @@ function parseMediaId(idOrExternalId) {
         tvdbId = baseId.substring(4);
     } else if (baseId.startsWith("anidb") && baseId.length > 5) {
         anidbId = baseId.substring(5);
+    } else if (baseId.startsWith("jellyfin:") && baseId.length > 9) {
+        jellyfinId = baseId.substring(9);
     } else {
-        console.warn("❌ Unsupported base ID format (expected tt..., tmdb..., tvdb..., or anidb...):", baseId);
+        console.warn("❌ Unsupported base ID format (expected tt..., tmdb..., tvdb..., anidb..., or jellyfin:...):", baseId);
         return null;
     }
 
-    return { baseId, itemType, seasonNumber, episodeNumber, imdbId, tmdbId, tvdbId, anidbId };
+    return { baseId, itemType, seasonNumber, episodeNumber, imdbId, tmdbId, tvdbId, anidbId, jellyfinId };
 }
 
 
@@ -467,6 +488,46 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
 
     //if (foundSeries.length === 0) console.log(`📭 No Jellyfin series match found for ${imdbId || tmdbId || tvdbId || anidbId}.`);
     return foundSeries;
+}
+
+/**
+ * Finds an item by its Jellyfin internal ID.
+ * @param {string} jellyfinId - The Jellyfin internal item ID.
+ * @param {string} itemType - The item type ('Movie' or 'Series').
+ * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
+ * @returns {Promise<object|null>} The found Jellyfin item or null.
+ */
+async function findItemById(jellyfinId, itemType, config) {
+    // Auto-fetch User ID if not provided
+    if (!config.userId) {
+        const user = await getCurrentUser(config);
+        if (!user || !user.Id) {
+            console.error("❌ Could not determine User ID from API key");
+            return null;
+        }
+        config.userId = user.Id;
+    }
+    
+    try {
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items/${jellyfinId}`, {}, config);
+        if (data && data.Id) {
+            // Verify it's the right type
+            if (itemType === ITEM_TYPE_MOVIE && data.Type === ITEM_TYPE_MOVIE) {
+                console.log(`[FIND] Found movie by Jellyfin ID: ${jellyfinId} - "${data.Name}"`);
+                return [data]; // Return array for consistency with findMovieItem
+            } else if (itemType === ITEM_TYPE_SERIES && data.Type === ITEM_TYPE_SERIES) {
+                console.log(`[FIND] Found series by Jellyfin ID: ${jellyfinId} - "${data.Name}"`);
+                return [data]; // Return array for consistency with findSeriesItem
+            } else {
+                console.warn(`[FIND] Item ${jellyfinId} is type ${data.Type}, expected ${itemType}`);
+                return null;
+            }
+        }
+        return null;
+    } catch (err) {
+        console.error(`[FIND] Error finding item by Jellyfin ID ${jellyfinId}:`, err.message);
+        return null;
+    }
 }
 
 /**
@@ -1068,7 +1129,12 @@ async function getStream(idOrExternalId, config) {
         let jellyfinItem = null;
         let parentSeriesName = null;
 
-        if (parsedId.itemType === ITEM_TYPE_MOVIE) {
+        // Check if we have a direct Jellyfin ID
+        if (parsedId.jellyfinId) {
+            console.log(`[FIND] Using direct Jellyfin ID: ${parsedId.jellyfinId}`);
+            const itemType = parsedId.itemType === ITEM_TYPE_EPISODE ? ITEM_TYPE_SERIES : parsedId.itemType;
+            jellyfinItem = await findItemById(parsedId.jellyfinId, itemType, config);
+        } else if (parsedId.itemType === ITEM_TYPE_MOVIE) {
             //console.log(`🎬 Searching for Movie: ${parsedId.imdbId || parsedId.tmdbId}`);
             jellyfinItem = await findMovieItem(parsedId.imdbId, parsedId.tmdbId, parsedId.tvdbId, parsedId.anidbId, config);
         } else if (parsedId.itemType === ITEM_TYPE_EPISODE) {   
