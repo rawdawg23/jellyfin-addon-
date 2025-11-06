@@ -127,13 +127,12 @@ iframe[id*="kofi-wo-container"] {
   <form id="cfg">
     <label>Jellyfin Server URL</label>
     <input name="serverUrl" placeholder="https://your-server.com:443" required>
-    <label>User ID</label>
-    <input name="userId" placeholder="Enter your Jellyfin User ID" required>
-    <label>API Key (Access Token)</label>
-    <input name="accessToken" type="text" placeholder="Enter your API key manually or use Step 1 to auto-fill" required>
+    <label>API Key</label>
+    <input name="accessToken" type="text" placeholder="Enter your API key (User ID will be auto-detected)" required>
     <small style="color:var(--text-dim);font-size:0.85rem;margin-top:0.25rem;display:block;">
-      💡 <strong>Manual Entry:</strong> You can enter your API key directly here, or use Step 1 above to auto-fill.<br>
-      💡 <strong>Permanent Key:</strong> Get a permanent API key from Jellyfin: Dashboard → Settings → API Keys → Create API Key
+      💡 <strong>Simplified Setup:</strong> Only Server URL and API Key needed! User ID is automatically detected.<br>
+      💡 <strong>Get API Key:</strong> Jellyfin Dashboard → Settings → API Keys → Create API Key<br>
+      💡 <strong>Or use Step 1:</strong> Enter username/password to auto-get API key
     </small>
     <button id="cfgBtn">Create & Install Addon</button>
   </form>
@@ -190,7 +189,7 @@ $("#helper").addEventListener("submit", async e=>{
     /* autofill config form only if fields are empty */
     const cf=$("#cfg");
     if (!cf.serverUrl.value) cf.serverUrl.value = url;
-    if (!cf.userId.value) cf.userId.value = data?.User?.Id||"";
+    // User ID no longer needed - will be auto-detected from API key
     if (!cf.accessToken.value) cf.accessToken.value = data?.AccessToken||"";
   }catch(err){
     alert("❌ "+err.message);

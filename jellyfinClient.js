@@ -143,6 +143,31 @@ function parseMediaId(idOrExternalId) {
 // --- Jellyfin Item Finding ---
 
 /**
+ * Gets the current user information from Jellyfin using the API key.
+ * This automatically determines the User ID from the API key.
+ * @param {object} config - The configuration object containing serverUrl and accessToken.
+ * @returns {Promise<object|null>} The user object with Id property or null if unsuccessful.
+ */
+async function getCurrentUser(config) {
+    if (!config.serverUrl || !config.accessToken) {
+        console.error("❌ Configuration missing for getCurrentUser");
+        return null;
+    }
+    
+    try {
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/Me`, {}, config);
+        if (data && data.Id) {
+            console.log(`[AUTH] Current user: ${data.Name} (ID: ${data.Id})`);
+            return data;
+        }
+        return null;
+    } catch (err) {
+        console.error("❌ getCurrentUser error:", err.message);
+        return null;
+    }
+}
+
+/**
  * Performs a Jellyfin API request with standard headers and error handling.
  * @param {string} url - The full URL for the API request.
  * @param {object} [params] - Optional query parameters.
@@ -195,6 +220,16 @@ async function makeJellyfinApiRequest(url, params = {}, config) {
  * @returns {Promise<object|null>} The found Jellyfin movie item or null.
  */
 async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
+    // Auto-fetch User ID if not provided
+    if (!config.userId) {
+        const user = await getCurrentUser(config);
+        if (!user || !user.Id) {
+            console.error("❌ Could not determine User ID from API key");
+            return [];
+        }
+        config.userId = user.Id;
+    }
+    
     console.log(`[FIND] Searching for movie - IMDb: ${imdbId}, TMDB: ${tmdbId}, TVDB: ${tvdbId}, AniDB: ${anidbId}`);
     console.log(`[FIND] Using User ID: ${config.userId}`);
     
@@ -294,6 +329,16 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
  * @returns {Promise<object|null>} The found Jellyfin series item or null.
  */
 async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
+    // Auto-fetch User ID if not provided
+    if (!config.userId) {
+        const user = await getCurrentUser(config);
+        if (!user || !user.Id) {
+            console.error("❌ Could not determine User ID from API key");
+            return [];
+        }
+        config.userId = user.Id;
+    }
+    
     let foundSeries = [];
     const baseSeriesParams = {
         IncludeItemTypes: ITEM_TYPE_SERIES,
@@ -910,12 +955,22 @@ async function getPlaybackStreams(jellyfinItem, seriesName = null, config) {
  * @returns {Promise<Array<object>|null>} An array of stream detail objects or null if unsuccessful.
  */
 async function getStream(idOrExternalId, config) {
-    
-    
     // Validate provided configuration
-    if (!config.serverUrl || !config.userId || !config.accessToken) {
-        console.error("❌ Configuration missing (serverUrl, userId, or accessToken)");
+    if (!config.serverUrl || !config.accessToken) {
+        console.error("❌ Configuration missing (serverUrl or accessToken)");
         return null; // Critical configuration is missing
+    }
+    
+    // Auto-fetch User ID if not provided
+    if (!config.userId) {
+        console.log("[AUTH] User ID not provided, fetching from API key...");
+        const user = await getCurrentUser(config);
+        if (!user || !user.Id) {
+            console.error("❌ Could not determine User ID from API key");
+            return null;
+        }
+        config.userId = user.Id;
+        console.log(`[AUTH] Auto-detected User ID: ${config.userId}`);
     }
     let fullIdForLog = idOrExternalId;
     try {
@@ -996,9 +1051,20 @@ async function getStream(idOrExternalId, config) {
  * @returns {Promise<Array<object>|null>} An array of Jellyfin movie items or null if unsuccessful.
  */
 async function getMovies(config) {
-    if (!config.serverUrl || !config.userId || !config.accessToken) {
+    if (!config.serverUrl || !config.accessToken) {
         console.error("❌ Configuration missing for getMovies");
         return [];
+    }
+    
+    // Auto-fetch User ID if not provided
+    let userId = config.userId;
+    if (!userId) {
+        const user = await getCurrentUser(config);
+        if (!user || !user.Id) {
+            console.error("❌ Could not determine User ID from API key");
+            return [];
+        }
+        userId = user.Id;
     }
     
     try {
@@ -1007,10 +1073,10 @@ async function getMovies(config) {
             Recursive: true,
             Fields: "ProviderIds,Name,Id,Overview,ProductionYear,RunTimeTicks,Genres,ImageTags",
             Limit: 1000,
-            UserId: config.userId
+            UserId: userId
         };
         
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config);
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
         if (!data) {
             console.error("❌ getMovies: No data returned from Jellyfin API");
             return [];
@@ -1028,9 +1094,20 @@ async function getMovies(config) {
  * @returns {Promise<Array<object>|null>} An array of Jellyfin series items or null if unsuccessful.
  */
 async function getSeries(config) {
-    if (!config.serverUrl || !config.userId || !config.accessToken) {
+    if (!config.serverUrl || !config.accessToken) {
         console.error("❌ Configuration missing for getSeries");
         return [];
+    }
+    
+    // Auto-fetch User ID if not provided
+    let userId = config.userId;
+    if (!userId) {
+        const user = await getCurrentUser(config);
+        if (!user || !user.Id) {
+            console.error("❌ Could not determine User ID from API key");
+            return [];
+        }
+        userId = user.Id;
     }
     
     try {
@@ -1039,10 +1116,10 @@ async function getSeries(config) {
             Recursive: true,
             Fields: "ProviderIds,Name,Id,Overview,ProductionYear,Genres,ImageTags",
             Limit: 1000,
-            UserId: config.userId
+            UserId: userId
         };
         
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, params, config);
+        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
         if (!data) {
             console.error("❌ getSeries: No data returned from Jellyfin API");
             return [];
@@ -1059,6 +1136,7 @@ module.exports = {
     getStream,
     getMovies,
     getSeries,
+    getCurrentUser,
     parseMediaId,
     deduplicateAndSortStreams,
     makeJellyfinApiRequest

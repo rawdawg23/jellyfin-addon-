@@ -64,8 +64,7 @@ function baseManifest () {
     behaviorHints: { configurable: true, configurationRequired: true },
     config: [
       { key: "serverUrl",   type: "text", title: "Jellyfin Server URL",  required: true },
-      { key: "userId",      type: "text", title: "Jellyfin User ID",     required: true },
-      { key: "accessToken", type: "text", title: "Jellyfin Access Token", required: true }
+      { key: "accessToken", type: "text", title: "Jellyfin API Key", required: true }
     ]
   };
 }
@@ -140,9 +139,14 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
   const { type, id } = req.params;
   console.log(`[STREAM] Request for ${type}/${id}`);
   
-  if (!cfg.serverUrl || !cfg.userId || !cfg.accessToken) {
-    console.error("[STREAM] Missing configuration");
+  if (!cfg.serverUrl || !cfg.accessToken) {
+    console.error("[STREAM] Missing configuration (need serverUrl and accessToken)");
     return res.json({ streams: [] });
+  }
+  
+  // User ID is optional - will be auto-fetched if not provided
+  if (!cfg.userId) {
+    console.log("[STREAM] User ID not provided, will auto-fetch from API key");
   }
 
   if (!jellyfin) {
@@ -154,7 +158,8 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
     // Log config info for debugging
     const apiKeyPreview = cfg.accessToken ? 
       `${cfg.accessToken.substring(0, 10)}...` : 'MISSING';
-    console.log(`[STREAM] Config: Server=${cfg.serverUrl}, UserId=${cfg.userId}, APIKey=${apiKeyPreview}`);
+    const userIdPreview = cfg.userId || '(will auto-fetch)';
+    console.log(`[STREAM] Config: Server=${cfg.serverUrl}, UserId=${userIdPreview}, APIKey=${apiKeyPreview}`);
     console.log(`[STREAM] Searching for ${type} with ID: ${id}`);
     const raw = await jellyfin.getStream(id, cfg);
     console.log(`[STREAM] Found ${raw?.length || 0} stream(s) from Jellyfin`);         
@@ -218,9 +223,14 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
   }
 
   const { type, catalogId, extra } = req.params;
-  if (!cfg.serverUrl || !cfg.userId || !cfg.accessToken) {
-    console.error("[CATALOG] Missing configuration");
+  if (!cfg.serverUrl || !cfg.accessToken) {
+    console.error("[CATALOG] Missing configuration (need serverUrl and accessToken)");
     return res.json({ metas: [] });
+  }
+  
+  // User ID is optional - will be auto-fetched if not provided
+  if (!cfg.userId) {
+    console.log("[CATALOG] User ID not provided, will auto-fetch from API key");
   }
 
   if (!jellyfin) {
@@ -237,7 +247,8 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
     // Log config info for debugging
     const apiKeyPreview = cfg.accessToken ? 
       `${cfg.accessToken.substring(0, 10)}...` : 'MISSING';
-    console.log(`[CATALOG] Config: Server=${cfg.serverUrl}, UserId=${cfg.userId}, APIKey=${apiKeyPreview}`);
+    const userIdPreview = cfg.userId || '(will auto-fetch)';
+    console.log(`[CATALOG] Config: Server=${cfg.serverUrl}, UserId=${userIdPreview}, APIKey=${apiKeyPreview}`);
     console.log(`[CATALOG] Request for ${type}/${catalogId}${extra ? `/${extra}` : ''}`);
     let items = [];
     
