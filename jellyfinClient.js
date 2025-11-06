@@ -1011,11 +1011,21 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         try {
             const data = await makeJellyfinApiRequest(`${config.serverUrl}/Items`, directLookupParams, config, 10000);
             if (data?.Items?.length > 0) {
+                // CRITICAL: Jellyfin's API ignores search params and returns random items
+                // We MUST filter by ProviderIds to get actual matches
                 const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                 if (matches.length > 0) {
                     console.log(`[FIND] ✅ Found via /Items with ${searchedIdField}`);
                     foundItems.push(...matches);
+                } else {
+                    console.log(`[FIND] ⚠️ Jellyfin returned ${data.Items.length} items but NONE matched ProviderIds (Jellyfin's search is broken)`);
+                    // Log first item's ProviderIds for debugging
+                    if (data.Items[0]?.ProviderIds) {
+                        console.log(`[FIND]   First item ProviderIds:`, JSON.stringify(data.Items[0].ProviderIds));
+                    }
                 }
+            } else {
+                console.log(`[FIND] Strategy 1: Jellyfin returned 0 items (series may not be in library or search is broken)`);
             }
         } catch (err) {
             console.log(`[FIND] Strategy 1 failed: ${err.message}`);
@@ -1102,6 +1112,11 @@ async function findSeriesItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     
     if (foundItems.length === 0) {
         console.log(`[FIND] ❌ NO MATCH FOUND after direct API search`);
+        console.log(`[FIND] This could mean:`);
+        console.log(`[FIND]   1. The series is not in your Jellyfin library`);
+        console.log(`[FIND]   2. The series doesn't have IMDb/TMDb/TVDB IDs in its metadata`);
+        console.log(`[FIND]   3. Jellyfin's search API is broken (common issue)`);
+        console.log(`[FIND] Try browsing the series catalog in Stremio to add it to cache, then search again`);
     } else {
         console.log(`[FIND] ✅ SUCCESS: Found ${foundItems.length} matching series via API`);
         foundItems.forEach((item, idx) => {
