@@ -395,7 +395,34 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         UserId: config.userId
     };
 
-    // --- Strategy 1: Direct ID Lookup (/Users/{UserId}/Items) - Jellyfin requires UserId endpoint ---
+    // --- Strategy 1: Search using /Search/Hints endpoint (Jellyfin's search API) ---
+    // Jellyfin's /Items endpoint seems to ignore search parameters, so try the Search endpoint instead
+    if (imdbId || tmdbId || tvdbId || anidbId) {
+        console.log(`[FIND] Strategy 1: Using /Search/Hints endpoint for search`);
+        try {
+            const searchParams = {
+                SearchTerm: imdbId || tmdbId || tvdbId || anidbId,
+                IncludeItemTypes: ITEM_TYPE_MOVIE,
+                Recursive: true,
+                Limit: 50 // Get more results to filter through
+            };
+            
+            const searchData = await makeJellyfinApiRequest(`${config.serverUrl}/Search/Hints`, searchParams, config, 30000);
+            console.log(`[FIND] Strategy 1 (Search/Hints): Received ${searchData?.SearchHints?.length || 0} hints from API`);
+            
+            if (searchData?.SearchHints?.length > 0) {
+                // SearchHints may contain item IDs, but we need to fetch the actual items
+                // Try Strategy 1b: Direct /Items lookup with ID parameter (fallback)
+                console.log(`[FIND] Strategy 1b: Falling back to /Items with direct ID parameter`);
+            }
+        } catch (err) {
+            console.log(`[FIND] Strategy 1 (Search/Hints) failed: ${err.message}`);
+        }
+    }
+    
+    // --- Strategy 1b: Direct ID Lookup (/Users/{UserId}/Items) - Jellyfin requires UserId endpoint ---
+    // NOTE: This appears to be broken in Jellyfin - it ignores the ImdbId parameter
+    // But we'll keep it as a fallback in case some Jellyfin versions support it
     const directLookupParams = { ...baseMovieParams };
     let searchedIdField = "";
     if (imdbId) { directLookupParams.ImdbId = imdbId; searchedIdField = "ImdbId"; }
@@ -404,27 +431,27 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
     else if (anidbId) { directLookupParams.AniDbId = anidbId; searchedIdField = "AniDbId"; }
     delete directLookupParams.UserId; // Remove UserId from params for /Users/{userId}/Items endpoint
     
-    if (searchedIdField) {
-        console.log(`[FIND] Strategy 1: Searching with ${searchedIdField}=${directLookupParams[searchedIdField]} using /Users/{userId}/Items endpoint`);
+    if (searchedIdField && foundItems.length === 0) {
+        console.log(`[FIND] Strategy 1b: Searching with ${searchedIdField}=${directLookupParams[searchedIdField]} using /Users/{userId}/Items endpoint (WARNING: Jellyfin may ignore this parameter)`);
         try {
             const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config, 30000);
-            console.log(`[FIND] Strategy 1: Received ${data?.Items?.length || 0} items from API`);
+            console.log(`[FIND] Strategy 1b: Received ${data?.Items?.length || 0} items from API`);
             if (data?.Items?.length > 0) {
                 // Debug: Show ProviderIds of first few items
                 data.Items.slice(0, 3).forEach((item, idx) => {
-                    console.log(`[FIND] Strategy 1: Item ${idx + 1} "${item.Name}" has ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
+                    console.log(`[FIND] Strategy 1b: Item ${idx + 1} "${item.Name}" has ProviderIds:`, JSON.stringify(item.ProviderIds || {}));
                 });
                 
                 const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                 if (matches.length > 0) {
-                    console.log(`[FIND] Strategy 1: ✅ MATCH FOUND: "${matches[0].Name}"`);
+                    console.log(`[FIND] Strategy 1b: ✅ MATCH FOUND: "${matches[0].Name}"`);
                     foundItems.push(...matches);
                 } else {
-                    console.log(`[FIND] Strategy 1: No items matched ProviderId filter`);
+                    console.log(`[FIND] Strategy 1b: No items matched ProviderId filter (Jellyfin likely ignored search parameter)`);
                 }
             }
         } catch (err) {
-            console.log(`[FIND] Strategy 1 failed: ${err.message}`);
+            console.log(`[FIND] Strategy 1b failed: ${err.message}`);
         }
     }
 
