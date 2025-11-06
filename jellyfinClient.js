@@ -249,7 +249,7 @@ async function makeJellyfinApiRequest(url, params = {}, config) {
             url: normalizedUrl,
             headers: { [HEADER_JELLYFIN_TOKEN]: config.accessToken },
             params: params,
-            timeout: 10000, // 10 second timeout per request to prevent hanging
+            timeout: 5000, // 5 second timeout per request to prevent hanging on large libraries
         });
         return response.data;
     } catch (err) {
@@ -303,69 +303,113 @@ async function findMovieItem(imdbId, tmdbId, tvdbId, anidbId, config) {
         UserId: config.userId
     };
 
-    // --- Strategy 1: Direct ID Lookup (/Users/{UserId}/Items) ---
-    // Use /Users/{UserId}/Items instead of /Items for better performance with large libraries
+    // --- Strategy 1 & 2: Run in parallel for faster results ---
+    // Build all search promises upfront
+    const searchPromises = [];
+    
+    // Strategy 1: Direct ID Lookup
     const directLookupParams = { ...baseMovieParams };
     let searchedIdField = "";
     if (imdbId) { directLookupParams.ImdbId = imdbId; searchedIdField = "ImdbId"; }
     else if (tmdbId) { directLookupParams.TmdbId = tmdbId; searchedIdField = "TmdbId"; }
     else if (tvdbId) { directLookupParams.TvdbId = tvdbId; searchedIdField = "TvdbId"; }
     else if (anidbId) { directLookupParams.AniDbId = anidbId; searchedIdField = "AniDbId"; }
-    delete directLookupParams.UserId; // /Users/{userId}/Items doesn't need UserId in params
-    // Add limit to prevent slow queries on large libraries
-    directLookupParams.Limit = 10; // Only need first match
+    delete directLookupParams.UserId;
+    directLookupParams.Limit = 10;
     
     if (searchedIdField) {
-        try {
-            const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config);
-            if (data?.Items?.length > 0) {
-                const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
-                if (matches.length > 0) {
-                    foundItems.push(...matches);
-                }
+        searchPromises.push(
+            makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, directLookupParams, config)
+                .then(data => {
+                    if (data?.Items?.length > 0) {
+                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                        return matches.length > 0 ? matches : null;
+                    }
+                    return null;
+                })
+                .catch(err => {
+                    console.log(`[FIND] Strategy 1 failed: ${err.message}`);
+                    return null;
+                })
+        );
+    }
+    
+    // Strategy 2: AnyProviderIdEquals - try most common formats first
+    const anyProviderIdFormats = [];
+    if (imdbId) {
+        const numericImdbId = imdbId.replace('tt', '');
+        // Try most common format first
+        anyProviderIdFormats.push(`imdb.${imdbId}`, `Imdb.${imdbId}`);
+        if (numericImdbId !== imdbId) {
+            anyProviderIdFormats.push(`imdb.${numericImdbId}`, `Imdb.${numericImdbId}`);
+        }
+    } else if (tmdbId) {
+        anyProviderIdFormats.push(`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`);
+    } else if (tvdbId) {
+        anyProviderIdFormats.push(`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`);
+    } else if (anidbId) {
+        anyProviderIdFormats.push(`anidb.${anidbId}`, `AniDb.${anidbId}`);
+    }
+    
+    // Only try first 2 formats in parallel to avoid too many simultaneous requests
+    for (const attemptFormat of anyProviderIdFormats.slice(0, 2)) {
+        const altParams = { ...baseMovieParams, AnyProviderIdEquals: attemptFormat };
+        delete altParams.ImdbId;
+        delete altParams.TmdbId;
+        delete altParams.TvdbId;
+        delete altParams.AniDbId;
+        delete altParams.UserId;
+        altParams.Limit = 10;
+        
+        searchPromises.push(
+            makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config)
+                .then(data => {
+                    if (data?.Items?.length > 0) {
+                        const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
+                        return matches.length > 0 ? matches : null;
+                    }
+                    return null;
+                })
+                .catch(err => {
+                    console.log(`[FIND] Strategy 2 format ${attemptFormat} failed: ${err.message}`);
+                    return null;
+                })
+        );
+    }
+    
+    // Wait for first successful result
+    if (searchPromises.length > 0) {
+        const results = await Promise.allSettled(searchPromises);
+        for (const result of results) {
+            if (result.status === 'fulfilled' && result.value) {
+                foundItems.push(...result.value);
+                break; // Found match, stop
             }
-        } catch (err) {
-            // Timeout or error - continue to Strategy 2
-            console.log(`[FIND] Strategy 1 failed or timed out: ${err.message}`);
         }
     }
-
-    // --- Strategy 2: AnyProviderIdEquals Lookup (/Users/{UserId}/Items) ---
-    if (foundItems.length === 0) {
-        const anyProviderIdFormats = [];
-        if (imdbId) {
-            const numericImdbId = imdbId.replace('tt', '');
-            anyProviderIdFormats.push(`imdb.${imdbId}`, `Imdb.${imdbId}`);
-            if (numericImdbId !== imdbId) anyProviderIdFormats.push(`imdb.${numericImdbId}`, `Imdb.${numericImdbId}`);
-        } else if (tmdbId) {
-            anyProviderIdFormats.push(`tmdb.${tmdbId}`, `Tmdb.${tmdbId}`);
-        } else if (tvdbId) {
-            anyProviderIdFormats.push(`tvdb.${tvdbId}`, `Tvdb.${tvdbId}`);
-        } else if (anidbId) {
-            anyProviderIdFormats.push(`anidb.${anidbId}`, `AniDb.${anidbId}`);
-        }
-
-        for (const attemptFormat of anyProviderIdFormats) {
+    
+    // If still no results and we have more formats to try, try them sequentially
+    if (foundItems.length === 0 && anyProviderIdFormats.length > 2) {
+        for (const attemptFormat of anyProviderIdFormats.slice(2)) {
             const altParams = { ...baseMovieParams, AnyProviderIdEquals: attemptFormat };
-            delete altParams.ImdbId; // Remove specific ID params when using AnyProviderIdEquals
+            delete altParams.ImdbId;
             delete altParams.TmdbId;
             delete altParams.TvdbId;
             delete altParams.AniDbId;
-            delete altParams.UserId; // /Users/{userId}/Items doesn't need UserId in params
-            altParams.Limit = 10; // Only need first match, reduce query time
-
+            delete altParams.UserId;
+            altParams.Limit = 10;
+            
             try {
                 const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${config.userId}/Items`, altParams, config);
                 if (data?.Items?.length > 0) {
                     const matches = data.Items.filter(i => _isMatchingProviderId(i.ProviderIds, imdbId, tmdbId, tvdbId, anidbId));
                     if (matches.length > 0) {
                         foundItems.push(...matches);
-                        break; // Found match, stop trying other formats
+                        break;
                     }
                 }
             } catch (err) {
-                // Timeout or error - continue to next format
-                console.log(`[FIND] Strategy 2 format ${attemptFormat} failed or timed out: ${err.message}`);
+                console.log(`[FIND] Strategy 2 format ${attemptFormat} failed: ${err.message}`);
                 continue;
             }
         }

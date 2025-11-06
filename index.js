@@ -176,7 +176,7 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
       res.set('Cache-Control', 'no-cache');
       res.json({ streams: [] });
     }
-  }, 20000); // 20 second timeout (increased for large libraries)
+  }, 15000); // 15 second timeout - reduced since we have 5s per API request
 
   let cfg;
   try {
