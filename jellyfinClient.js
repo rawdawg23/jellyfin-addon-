@@ -175,6 +175,12 @@ async function makeJellyfinApiRequest(url, params = {}, config) {
             console.log(`🔧 Server: ${config.serverUrl}, UserId: ${config.userId}`);
             console.log(`🔧 Full error response:`, err.response?.data);
         }
+        if (err.response?.status === 404) {
+            console.log(`🔧 Detected Not Found (404). This usually means:`);
+            console.log(`🔧   - User ID "${config.userId}" doesn't exist in Jellyfin`);
+            console.log(`🔧   - OR the endpoint URL is incorrect`);
+            console.log(`🔧 Full error response:`, err.response?.data);
+        }
         return null; // Indicate failure
     }
 }
