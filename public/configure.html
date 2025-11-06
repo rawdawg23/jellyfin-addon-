@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>StreamBridge • Jellyfin ↔ Stremio Setup</title>
+<title>EP-FIN • Jellyfin ↔ Stremio Setup</title>
 
 <!-- ----------  Design tokens  ---------- -->
 <style>
@@ -83,7 +83,7 @@ iframe[id*="kofi-wo-container"] {
 <body>
 
 <div class="panel">
-  <h1>StreamBridge Setup</h1>
+  <h1>EP-FIN Setup</h1>
   <p style="text-align:center;margin-top:0.5rem;font-size:.8rem;color:var(--text-dim)">
     Need help? See <a href="https://github.com/h4harsimran/streambridge" target="_blank">docs on GitHub</a>.
   </p>
@@ -170,7 +170,7 @@ $("#helper").addEventListener("submit", async e=>{
       headers:{
         "Content-Type":"application/json",
         "X-Emby-Authorization":
-          'MediaBrowser Client="StreamBridge", Device="WebHelper", DeviceId="webhelper", Version="1.0.0"'
+          'MediaBrowser Client="EP-FIN", Device="WebHelper", DeviceId="webhelper", Version="1.0.0"'
       },
       body:JSON.stringify({Username:user,Pw:pass})
     });

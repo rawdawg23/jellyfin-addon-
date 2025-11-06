@@ -222,7 +222,7 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
     const streams = (raw || [])
       .filter(s => s.directPlayUrl)
       .map(s => {
-        // Build behaviorHints with enriched data (matching Stremio/StreamBridge format)
+        // Build behaviorHints with enriched data (matching Stremio/EP-FIN format)
         const behaviorHints = {};
         if (s.mediaInfo?.filename) behaviorHints.filename = s.mediaInfo.filename;
         if (s.mediaInfo?.size) behaviorHints.videoSize = s.mediaInfo.size;
@@ -497,7 +497,7 @@ app.get("/manifest.json", (_req, res) => {
 // HEALTH CHECK route (for Hugging Face Spaces)
 // ──────────────────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "streambridge" });
+  res.json({ status: "ok", service: "ep-fin" });
 });
 
 // ──────────────────────────────────────────────────────────────────────────
