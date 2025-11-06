@@ -1341,16 +1341,22 @@ async function getCollectionItems(collectionId, itemType, config) {
             
             allItems.push(...items);
             
-            if (totalRecords > 0) {
-                if (allItems.length >= totalRecords) {
-                    hasMore = false;
-                } else {
-                    startIndex += pageSize;
-                }
-            } else if (items.length < pageSize) {
+            // Always continue paginating until we get fewer items than page size
+            // Don't rely solely on TotalRecordCount as it may be inaccurate for large libraries
+            if (items.length < pageSize) {
+                // Got fewer items than page size - we've reached the end
+                hasMore = false;
+            } else if (totalRecords > 0 && allItems.length >= totalRecords) {
+                // TotalRecordCount says we're done and we've fetched that many
                 hasMore = false;
             } else {
+                // Continue to next page
                 startIndex += pageSize;
+                // Safety check: prevent infinite loops (max 1000 pages = 10 million items)
+                if (startIndex >= pageSize * 1000) {
+                    console.warn(`[GETCOLLECTIONITEMS] Reached safety limit of ${pageSize * 1000} items, stopping pagination`);
+                    hasMore = false;
+                }
             }
         }
         
