@@ -1285,13 +1285,13 @@ async function getMovies(config) {
 }
 
 /**
- * Gets all Collections (libraries) from Jellyfin.
+ * Gets all Libraries (root folders/views) from Jellyfin.
  * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
- * @returns {Promise<Array<object>|null>} An array of Jellyfin collection items or null if unsuccessful.
+ * @returns {Promise<Array<object>|null>} An array of Jellyfin library items or null if unsuccessful.
  */
-async function getCollections(config) {
+async function getLibraries(config) {
     if (!config.serverUrl || !config.accessToken) {
-        console.error("❌ Configuration missing for getCollections");
+        console.error("❌ Configuration missing for getLibraries");
         return [];
     }
     
@@ -1307,28 +1307,56 @@ async function getCollections(config) {
     }
     
     try {
-        // Fetch Collections (libraries) from Jellyfin
+        // First try: Get Views (libraries) - this is the standard way to get Jellyfin libraries
+        const viewsData = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Views`, {}, config);
+        
+        if (viewsData && viewsData.Items && viewsData.Items.length > 0) {
+            console.log(`[GETLIBRARIES] Found ${viewsData.Items.length} libraries from /Users/{userId}/Views`);
+            return viewsData.Items;
+        }
+        
+        // Fallback: Get root folders
         const params = {
-            IncludeItemTypes: "CollectionFolder",
+            ParentId: null, // Root level
             Recursive: false,
-            Fields: "Id,Name,Type",
+            Fields: "Id,Name,Type,CollectionType",
             UserId: userId
         };
         
         const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
         
         if (!data || !data.Items) {
-            console.error("❌ getCollections: No data returned from Jellyfin API");
+            console.error("❌ getLibraries: No data returned from Jellyfin API");
             return [];
         }
         
-        const collections = data.Items.filter(item => item.Type === "CollectionFolder");
-        console.log(`[GETCOLLECTIONS] Found ${collections.length} collections from Jellyfin`);
-        return collections;
+        // Filter for library folders (they have CollectionType like "movies", "tvshows", etc.)
+        const libraries = data.Items.filter(item => 
+            item.CollectionType && 
+            (item.CollectionType === "movies" || 
+             item.CollectionType === "tvshows" || 
+             item.CollectionType === "musicvideos" ||
+             item.CollectionType === "mixed" ||
+             item.Type === "CollectionFolder" ||
+             item.Type === "Folder")
+        );
+        
+        console.log(`[GETLIBRARIES] Found ${libraries.length} libraries from root folders`);
+        return libraries;
     } catch (err) {
-        console.error("❌ getCollections error:", err.message);
+        console.error("❌ getLibraries error:", err.message);
         return [];
     }
+}
+
+/**
+ * Gets all Collections (libraries) from Jellyfin - kept for backward compatibility.
+ * @param {object} config - The configuration object containing serverUrl, userId, and accessToken.
+ * @returns {Promise<Array<object>|null>} An array of Jellyfin collection items or null if unsuccessful.
+ */
+async function getCollections(config) {
+    // Use getLibraries instead
+    return await getLibraries(config);
 }
 
 /**

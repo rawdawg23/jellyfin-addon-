@@ -74,7 +74,7 @@ function decodeCfg(str) {
 // Parameterised MANIFEST route  →  /<cfg>/manifest.json
 //     <cfg> is a base64-url-encoded JSON blob with {serverUrl,userId,accessToken}
 // ──────────────────────────────────────────────────────────────────────────
-app.get("/:cfg/manifest.json", (req, res) => {
+app.get("/:cfg/manifest.json", async (req, res) => {
   const cfgString = req.params.cfg;
   console.log(`[MANIFEST] Request received - cfg length: ${cfgString.length}`);
   let cfg;
@@ -99,8 +99,72 @@ app.get("/:cfg/manifest.json", (req, res) => {
   mf.name = `StreamBridge: Jellyfin to Stremio (${serverHostname})`;
   mf.behaviorHints.configurationRequired = false;
   
-  // Keep catalog names simple - they'll show up in Stremio's catalog list
-  // Don't modify catalog names - let them appear as "Movies" and "Series" in Stremio
+  // Dynamically fetch Libraries from Jellyfin and create catalogs for each
+  try {
+    if (jellyfin && cfg.serverUrl && cfg.accessToken) {
+      const libraries = await jellyfin.getLibraries(cfg) || [];
+      console.log(`[MANIFEST] Found ${libraries.length} libraries from Jellyfin`);
+      
+      // Create catalogs for each library
+      for (const library of libraries) {
+        const libraryName = library.Name || `Library ${library.Id}`;
+        const libraryId = `jellyfin-library-${library.Id}`;
+        
+        // Determine library type based on CollectionType
+        const collectionType = library.CollectionType || library.Type || '';
+        
+        // Create catalogs based on library content type
+        if (collectionType === 'movies' || collectionType === 'mixed') {
+          mf.catalogs.push({
+            type: "movie",
+            id: libraryId,
+            name: libraryName
+          });
+        }
+        
+        if (collectionType === 'tvshows' || collectionType === 'mixed') {
+          mf.catalogs.push({
+            type: "series",
+            id: libraryId,
+            name: libraryName
+          });
+        }
+        
+        // If no CollectionType specified, create both movie and series catalogs
+        if (!collectionType || collectionType === '') {
+          mf.catalogs.push(
+            { type: "movie", id: libraryId, name: libraryName },
+            { type: "series", id: libraryId, name: libraryName }
+          );
+        }
+      }
+      
+      // If no libraries found, add default catalogs
+      if (mf.catalogs.length === 0) {
+        console.log(`[MANIFEST] No libraries found, adding default catalogs`);
+        mf.catalogs.push(
+          { type: "movie", id: "jellyfin-movies", name: "Movies" },
+          { type: "series", id: "jellyfin-series", name: "Series" }
+        );
+      }
+      
+      console.log(`[MANIFEST] Created ${mf.catalogs.length} catalog(s) total`);
+    } else {
+      // Fallback to default catalogs if we can't fetch libraries
+      mf.catalogs.push(
+        { type: "movie", id: "jellyfin-movies", name: "Movies" },
+        { type: "series", id: "jellyfin-series", name: "Series" }
+      );
+    }
+  } catch (err) {
+    console.error("[MANIFEST] Error fetching libraries:", err.message);
+    console.error("[MANIFEST] Error stack:", err.stack);
+    // Fallback to default catalogs on error
+    mf.catalogs.push(
+      { type: "movie", id: "jellyfin-movies", name: "Movies" },
+      { type: "series", id: "jellyfin-series", name: "Series" }
+    );
+  }
 
   console.log(`[MANIFEST] Returning manifest for: ${mf.name}`);
   console.log(`[MANIFEST] Stream resource configured:`, mf.resources.find(r => r.name === 'stream'));
@@ -280,14 +344,28 @@ app.get(["/:cfg/catalog/:type/:catalogId.json", "/:cfg/catalog/:type/:catalogId/
     console.log(`[CATALOG] Request for ${type}/${catalogId}${extra ? `/${extra}` : ''}`);
     let items = [];
     
-    if (type === "movie" && catalogId === "jellyfin-movies") {
-      console.log(`[CATALOG] Fetching movies from Jellyfin...`);
+    // Handle library-specific catalogs (jellyfin-library-{libraryId})
+    if (catalogId.startsWith("jellyfin-library-")) {
+      const libraryId = catalogId.replace("jellyfin-library-", "");
+      console.log(`[CATALOG] Fetching items from library ${libraryId} (${type})...`);
+      
+      // Get items from specific library
+      items = await jellyfin.getCollectionItems(libraryId, type === "movie" ? "Movie" : (type === "series" ? "Series" : null), cfg) || [];
+      console.log(`[CATALOG] Found ${items.length} ${type} items from library ${libraryId}`);
+    } else if (type === "movie" && catalogId === "jellyfin-movies") {
+      console.log(`[CATALOG] Fetching all movies from Jellyfin...`);
       items = await jellyfin.getMovies(cfg) || [];
       console.log(`[CATALOG] Found ${items.length} movies from Jellyfin`);
     } else if (type === "series" && catalogId === "jellyfin-series") {
-      console.log(`[CATALOG] Fetching series from Jellyfin...`);
+      console.log(`[CATALOG] Fetching all series from Jellyfin...`);
       items = await jellyfin.getSeries(cfg) || [];
       console.log(`[CATALOG] Found ${items.length} series from Jellyfin`);
+    } else if (catalogId.startsWith("jellyfin-collection-")) {
+      // Handle old collection format (backward compatibility)
+      const collectionId = catalogId.replace("jellyfin-collection-", "");
+      console.log(`[CATALOG] Fetching items from collection ${collectionId} (${type})...`);
+      items = await jellyfin.getCollectionItems(collectionId, type === "movie" ? "Movie" : (type === "series" ? "Series" : null), cfg) || [];
+      console.log(`[CATALOG] Found ${items.length} ${type} items from collection ${collectionId}`);
     } else {
       console.log(`[CATALOG] Unknown catalog: ${type}/${catalogId}`);
       return res.json({ metas: [] });
