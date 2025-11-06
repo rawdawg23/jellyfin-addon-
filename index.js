@@ -105,7 +105,7 @@ app.get("/:cfg/manifest.json", async (req, res) => {
       const libraries = await jellyfin.getLibraries(cfg) || [];
       console.log(`[MANIFEST] Found ${libraries.length} libraries from Jellyfin`);
       
-      // Create catalogs for each library
+      // Create catalogs for each library - show ALL content
       for (const library of libraries) {
         const libraryName = library.Name || `Library ${library.Id}`;
         const libraryId = `jellyfin-library-${library.Id}`;
@@ -113,30 +113,12 @@ app.get("/:cfg/manifest.json", async (req, res) => {
         // Determine library type based on CollectionType
         const collectionType = library.CollectionType || library.Type || '';
         
-        // Create catalogs based on library content type
-        if (collectionType === 'movies' || collectionType === 'mixed') {
-          mf.catalogs.push({
-            type: "movie",
-            id: libraryId,
-            name: libraryName
-          });
-        }
-        
-        if (collectionType === 'tvshows' || collectionType === 'mixed') {
-          mf.catalogs.push({
-            type: "series",
-            id: libraryId,
-            name: libraryName
-          });
-        }
-        
-        // If no CollectionType specified, create both movie and series catalogs
-        if (!collectionType || collectionType === '') {
-          mf.catalogs.push(
-            { type: "movie", id: libraryId, name: libraryName },
-            { type: "series", id: libraryId, name: libraryName }
-          );
-        }
+        // Always create both movie and series catalogs for every library
+        // This ensures ALL content is accessible (movies, series, music videos shown as movies)
+        mf.catalogs.push(
+          { type: "movie", id: libraryId, name: libraryName },
+          { type: "series", id: libraryId, name: libraryName }
+        );
       }
       
       // If no libraries found, add default catalogs

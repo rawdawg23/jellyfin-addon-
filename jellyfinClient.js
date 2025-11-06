@@ -1443,9 +1443,12 @@ async function getCollectionItems(collectionId, itemType, config) {
                 UserId: userId
             };
             
+            // If itemType is null, don't filter - get ALL items
+            // This allows us to fetch everything from a library
             if (itemType) {
                 params.IncludeItemTypes = itemType;
             }
+            // If itemType is null, we fetch all types (Movie, Series, MusicVideo, etc.)
             
             const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/${userId}/Items`, params, config);
             
