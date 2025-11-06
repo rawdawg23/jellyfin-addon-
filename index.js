@@ -174,7 +174,7 @@ app.get("/:cfg/stream/:type/:id.json", async (req, res) => {
         if (s.itemId) behaviorHints.bingeGroup = `jellyfin-${s.itemId}`; // Enables auto-play for series
         
         const stream = {
-          name: "Jellyfin",
+          name: "StreamBridge",
           description: s.streamDescription || s.qualityTitle || "Direct Play",
           url: s.directPlayUrl,
           behaviorHints: Object.keys(behaviorHints).length > 0 ? behaviorHints : undefined
