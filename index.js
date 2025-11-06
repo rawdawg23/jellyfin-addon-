@@ -19,7 +19,9 @@ try {
   // Continue anyway - routes will handle errors
 }
 
-const PORT = process.env.PORT || 7000;
+// Hugging Face Spaces sets PORT=7860, default to 7000 for local dev
+// Force 7860 for Hugging Face Spaces if PORT is not explicitly set
+const PORT = parseInt(process.env.PORT || '7860', 10);
 const app  = express();
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -183,7 +185,16 @@ app.get("/configure", (_req, res) => {
   if (!fs.existsSync(filePath)) {
     console.error("configure.html not found at:", filePath);
     console.error("Current directory:", __dirname);
-    console.error("Files in public:", fs.readdirSync(path.join(__dirname, "public")));
+    try {
+      const publicDir = path.join(__dirname, "public");
+      if (fs.existsSync(publicDir)) {
+        console.error("Files in public:", fs.readdirSync(publicDir));
+      } else {
+        console.error("Public directory does not exist!");
+      }
+    } catch (err) {
+      console.error("Error reading public directory:", err);
+    }
     return res.status(500).send("Configuration file not found");
   }
   
@@ -221,11 +232,27 @@ app.use((err, req, res, next) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
-// Start the server
+// Start the server with error handling
 // ──────────────────────────────────────────────────────────────────────────
 const HOST = process.env.HOST || '0.0.0.0';
+
 app.listen(PORT, HOST, () => {
   console.log(`🚀  StreamBridge up at http://${HOST}:${PORT}/<cfg>/manifest.json`);
   console.log(`📋  Configure page: http://${HOST}:${PORT}/configure`);
   console.log(`💚  Health check: http://${HOST}:${PORT}/health`);
+  console.log(`✅  Server listening on port ${PORT}`);
+}).on('error', (err) => {
+  console.error('❌ Server failed to start:', err);
+  process.exit(1);
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  // Don't exit - let the server keep running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - let the server keep running
 });
