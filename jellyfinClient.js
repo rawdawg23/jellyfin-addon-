@@ -155,11 +155,49 @@ async function getCurrentUser(config) {
     }
     
     try {
-        const data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/Me`, {}, config);
+        // Method 1: Try /Users/Me (works with access tokens)
+        let data = await makeJellyfinApiRequest(`${config.serverUrl}/Users/Me`, {}, config);
         if (data && data.Id) {
             console.log(`[AUTH] Current user: ${data.Name} (ID: ${data.Id})`);
             return data;
         }
+        
+        // Method 2: Try /System/Info/Public to verify API key works
+        // Then try /Users endpoint to get all users
+        console.log(`[AUTH] /Users/Me not available, trying /Users endpoint...`);
+        data = await makeJellyfinApiRequest(`${config.serverUrl}/Users`, {}, config);
+        
+        if (data && Array.isArray(data) && data.length > 0) {
+            // Try each user to see which one the API key belongs to
+            // Test by making a request to /Users/{userId}/Items
+            for (const user of data) {
+                if (user.Id) {
+                    try {
+                        // Test if this user's items are accessible with this API key
+                        const testData = await makeJellyfinApiRequest(
+                            `${config.serverUrl}/Users/${user.Id}/Items`, 
+                            { Limit: 1 }, 
+                            config
+                        );
+                        if (testData !== null) {
+                            console.log(`[AUTH] Found matching user: ${user.Name} (ID: ${user.Id})`);
+                            return user;
+                        }
+                    } catch (e) {
+                        // This user doesn't match, try next
+                        continue;
+                    }
+                }
+            }
+        }
+        
+        // Method 3: If /Users returns object instead of array, try direct access
+        if (data && data.Id && !Array.isArray(data)) {
+            console.log(`[AUTH] Single user object found: ${data.Name} (ID: ${data.Id})`);
+            return data;
+        }
+        
+        console.error("❌ Could not determine user from API key");
         return null;
     } catch (err) {
         console.error("❌ getCurrentUser error:", err.message);
